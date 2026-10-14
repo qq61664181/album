@@ -1,0 +1,2151 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>相册标签管家 Pro</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .active-scale:active { transform: scale(0.95); }
+    .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 16px); }
+    .pt-safe { padding-top: max(env(safe-area-inset-top), 12px); }
+
+    /* Toast Animation */
+    @keyframes toastIn {
+      from { transform: translate(-50%, 20px); opacity: 0; }
+      to { transform: translate(-50%, 0); opacity: 1; }
+    }
+    .animate-toast { animation: toastIn 0.25s ease-out forwards; }
+    .swipe-container { touch-action: none; }
+
+    /* 大图查看器：平滑缩放与拖动，禁用长按菜单 */
+    #detail-image {
+      transition: transform .12s ease-out, opacity .2s ease-out;
+      transform-origin: center center;
+      -webkit-user-drag: none;
+      -webkit-touch-callout: none;
+    }
+    img { -webkit-touch-callout: none; }
+
+    body { background:
+      radial-gradient(circle at 12% -10%, rgba(99,102,241,.18), transparent 34rem),
+      radial-gradient(circle at 92% 8%, rgba(168,85,247,.11), transparent 28rem),
+      #0f172a; }
+    .photo-card { transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+    .photo-card:hover { border-color: rgba(129,140,248,.65); box-shadow: 0 12px 26px rgba(2,6,23,.28); }
+    #filter-chevron { transition: transform .2s ease; }
+    @media (prefers-reduced-motion: reduce) { .photo-card, #detail-image, #filter-chevron { transition: none; } }
+
+    @media (max-width: 640px) {
+      header { padding-left: 12px !important; padding-right: 12px !important; }
+      header .header-top { align-items: flex-start; }
+      header .header-actions { flex-wrap: wrap; justify-content: flex-end; max-width: 60%; gap: 6px !important; }
+      header .header-actions > button,
+      header .header-actions > label { padding-top: 8px !important; padding-bottom: 8px !important; }
+      main { padding-left: 10px !important; padding-right: 10px !important; }
+      #image-grid { gap: 9px !important; }
+    }
+    @media (max-width: 380px) {
+      header .header-actions { max-width: 56%; }
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col antialiased selection:bg-indigo-500 selection:text-white select-none bg-slate-900 text-slate-100 overflow-x-hidden">
+
+  <!-- Toast Notification Container -->
+  <div id="toast" class="hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-[90] bg-slate-800 text-slate-100 border border-slate-700 px-4 py-3 rounded-2xl shadow-2xl text-[13px] font-semibold items-center gap-2 pointer-events-none animate-toast">
+    <svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+    <span id="toast-msg">操作成功</span>
+  </div>
+
+  <!-- Header -->
+  <header class="sticky top-0 z-20 bg-slate-900/95 backdrop-blur-md border-b border-slate-800/80 pt-safe px-4 pb-3">
+    <div class="header-top flex items-center justify-between gap-2 mb-2.5">
+      <div class="flex items-center gap-2 min-w-0">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30 shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
+        </div>
+        <div class="min-w-0">
+          <h1 class="text-[17px] font-bold leading-tight truncate">相册标签管家</h1>
+          <p id="stats-counter" class="text-xs text-slate-400 truncate">正在加载...</p>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="header-actions flex items-center gap-1.5">
+        <button id="btn-toggle-view" class="px-3 py-2 rounded-xl text-[12px] font-medium bg-slate-800 hover:bg-slate-700 text-indigo-400 border border-slate-700 flex items-center gap-1.5 transition active-scale whitespace-nowrap">
+          <svg id="view-icon-cal" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+          <span id="view-toggle-text">收起月视图</span>
+        </button>
+
+        <label for="file-input" class="cursor-pointer px-3.5 py-2 rounded-xl text-[12px] font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1.5 shadow-md active-scale whitespace-nowrap">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+          导入
+        </label>
+        <input type="file" id="file-input" multiple accept="image/*" class="hidden" aria-label="选择要导入的原始图片文件">
+
+        <button id="btn-toggle-select" class="px-3 py-2 rounded-xl text-[12px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition active-scale whitespace-nowrap">
+          多选
+        </button>
+      </div>
+    </div>
+
+    <!-- Search Input -->
+    <div class="relative">
+      <svg class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+      <input type="text" id="search-input" placeholder="输入名称、日期或标签关键字搜索..."
+        class="w-full pl-11 pr-10 py-2.5 bg-slate-800/90 rounded-xl text-[13px] text-slate-100 placeholder-slate-500 border border-slate-700/80 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition">
+      <button id="btn-clear-search" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 text-sm p-1.5">
+        ✕
+      </button>
+    </div>
+
+    <!-- Multi-select Filter Chips Row -->
+    <div id="photo-filter-tools" class="mt-3">
+      <div class="flex items-center justify-between px-0.5">
+        <button id="btn-toggle-filters" type="button" class="flex items-center gap-1.5 text-[13px] font-medium text-slate-300 py-1.5 pr-2 active-scale">
+          <svg id="filter-chevron" class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"></path></svg>
+          <span>标签筛选</span>
+          <span id="filter-active-count" class="hidden px-1.5 py-0.5 rounded-full bg-indigo-600 text-white text-[11px] font-bold leading-none"></span>
+        </button>
+        <button id="btn-reset-filters" class="text-indigo-400 text-[13px] font-medium py-1.5 px-1 hidden active-scale">清除已选</button>
+      </div>
+
+      <div id="filter-tags-container" class="mt-1.5 flex flex-col gap-2 py-0.5 max-h-[30vh] overflow-y-auto pr-1 no-scrollbar" style="display:none;">
+        <!-- 按主分类分组的标签筛选区 -->
+      </div>
+
+      <div class="mt-2.5 flex flex-wrap gap-2">
+        <button id="btn-manage-tags" class="px-3 py-2 rounded-lg text-[12px] font-semibold bg-indigo-600/20 border border-indigo-500/50 text-indigo-300 hover:bg-indigo-600/40 active-scale">⚙️ 管理分类/标签</button>
+        <button id="btn-export-backup" class="px-3 py-2 rounded-lg text-[12px] font-semibold bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 active-scale">⬇ 导出备份</button>
+        <button id="btn-import-backup" class="px-3 py-2 rounded-lg text-[12px] font-semibold bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 active-scale">⬆ 恢复备份</button>
+        <input type="file" id="backup-file-input" accept=".json,application/json" class="hidden">
+      </div>
+    </div>
+  </header>
+
+  <!-- Main View Slot -->
+  <main class="flex-1 overflow-y-auto px-3 py-3.5 relative">
+    <div id="content-heading" class="mb-3 flex items-center justify-between gap-3">
+      <div class="min-w-0">
+        <div id="content-eyebrow" class="text-[11px] uppercase tracking-[.2em] text-indigo-400 font-bold">照片空间</div>
+        <h2 id="content-title" class="mt-1 text-[19px] font-bold text-slate-100 truncate">全部照片</h2>
+        <p id="content-description" class="mt-1 text-[12px] text-slate-500 leading-snug">所有照片已集中展示，可按日期、标签或关键词筛选</p>
+      </div>
+    </div>
+
+    <!-- Calendar View Container -->
+    <div id="calendar-view" class="hidden mb-4 bg-slate-800/60 border border-slate-700/60 rounded-2xl p-3 backdrop-blur-sm">
+      <div class="flex items-center justify-between mb-3 px-1">
+        <button id="cal-prev-month" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-[13px] active-scale">
+          ◀ 上个月
+        </button>
+        <span id="cal-month-title" class="text-[15px] font-bold text-indigo-300">2026年 10月</span>
+        <button id="cal-next-month" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-[13px] active-scale">
+          下个月 ▶
+        </button>
+      </div>
+
+      <!-- Calendar Header -->
+      <div class="grid grid-cols-7 gap-1 text-center text-[12px] font-semibold text-slate-400 mb-1.5">
+        <div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>
+      </div>
+      <!-- Days Grid -->
+      <div id="calendar-days-grid" class="grid grid-cols-7 gap-1">
+        <!-- Days injected dynamically -->
+      </div>
+      <div id="cal-filter-hint" class="hidden mt-2.5 pt-2.5 border-t border-slate-700/60 flex items-center justify-between text-[12px] text-indigo-300">
+        <span id="cal-selected-date-text">已选择日期: -</span>
+        <button id="btn-clear-date-filter" class="text-[12px] text-slate-400 hover:text-white underline py-1 px-1">查看全部日期</button>
+      </div>
+    </div>
+
+    <!-- Active Filter Banner -->
+    <div id="filter-summary" class="hidden mb-3 p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-[12px] flex items-center justify-between">
+      <div class="flex items-center gap-2 overflow-hidden">
+        <span class="text-indigo-300 font-medium shrink-0">当前筛选:</span>
+        <div id="active-tags-list" class="flex gap-1.5 overflow-x-auto no-scrollbar"></div>
+      </div>
+      <span id="filtered-count" class="text-slate-400 shrink-0 ml-2 font-mono text-[12px]">0 张</span>
+    </div>
+
+    <!-- Image Grid Container -->
+    <div id="image-grid" class="hidden grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 pb-24">
+      <!-- Photos injected dynamically -->
+    </div>
+
+    <!-- Empty State View -->
+    <div id="empty-state" class="hidden flex-col items-center justify-center py-20 text-center">
+      <div class="w-16 h-16 rounded-3xl bg-slate-800 flex items-center justify-center text-slate-500 mb-3">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+      </div>
+      <p class="text-slate-300 font-semibold text-[15px]">没有匹配的照片</p>
+      <p class="text-slate-500 text-[13px] mt-1 max-w-[240px]">请尝试重置筛选条件，或导入新照片</p>
+    </div>
+  </main>
+
+  <!-- Batch Action Bar -->
+  <div id="batch-bar" class="hidden fixed bottom-0 left-0 right-0 z-30 bg-slate-800/95 backdrop-blur-md border-t border-slate-700/80 px-4 py-3 shadow-2xl items-center justify-between gap-2 pb-safe">
+    <div class="flex items-center gap-2 shrink-0">
+      <span id="batch-count-badge" class="px-2.5 py-1 rounded-full bg-indigo-600 text-white font-bold text-[13px] leading-none">0</span>
+      <button id="btn-batch-select-all" class="text-[13px] text-slate-300 font-medium px-2 py-1 rounded-lg bg-slate-700/60 hover:bg-slate-700 active-scale">全选</button>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="btn-batch-export" class="px-3 py-2.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white text-[13px] font-semibold active-scale shadow-md" title="批量导出选中照片">导出</button>
+      <button id="btn-batch-tag" class="px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[13px] font-semibold flex items-center gap-1.5 active-scale shadow-md">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
+        打标签
+      </button>
+      <button id="btn-batch-delete" class="p-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 active-scale" title="删除选中">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Category & Tag Management Modal -->
+  <div id="modal-manage-tags" class="hidden fixed inset-0 z-[70] items-center justify-center p-3 sm:p-4">
+    <div id="modal-manage-overlay" class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
+    <div class="relative w-full max-w-xl bg-slate-800 border border-slate-700 rounded-3xl p-4 sm:p-5 shadow-2xl z-10 flex flex-col max-h-[88vh]">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-700">
+        <div>
+          <h3 class="text-[15px] font-bold text-slate-100">🗂️ 主分类与标签管理</h3>
+          <p class="text-[12px] text-slate-400 mt-1 leading-snug">先建主分类，再在分类下面添加标签；已有标签可改名、移动或删除。</p>
+        </div>
+        <button id="btn-close-manage-tags" class="text-slate-400 hover:text-white p-2 text-lg leading-none">✕</button>
+      </div>
+
+      <form id="form-manage-add-category" class="mt-3 flex gap-2">
+        <input type="text" id="manage-new-category-input" placeholder="新建主分类，例如：家庭、工作、旅行" required maxlength="24"
+          class="min-w-0 flex-1 bg-slate-900 rounded-xl px-3 py-2.5 text-[13px] text-slate-100 border border-slate-700 focus:outline-none focus:border-indigo-500">
+        <button type="submit" class="px-3.5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-[13px] shrink-0 active-scale">新增分类</button>
+      </form>
+
+      <div class="mt-3 p-3 rounded-2xl bg-slate-900/70 border border-slate-700/80">
+        <div class="text-[12px] font-semibold text-indigo-300 mb-2">在指定主分类下创建标签</div>
+        <form id="form-manage-add-tag" class="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto] gap-2">
+          <select id="manage-tag-category-select" required class="min-w-0 w-full bg-slate-800 rounded-xl px-3 py-2.5 text-[13px] text-slate-100 border border-slate-700 focus:outline-none focus:border-indigo-500"></select>
+          <input type="text" id="manage-new-tag-input" placeholder="标签名称" required maxlength="32"
+            class="min-w-0 w-full bg-slate-800 rounded-xl px-3 py-2.5 text-[13px] text-slate-100 border border-slate-700 focus:outline-none focus:border-indigo-500">
+          <button type="submit" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[13px] active-scale">添加标签</button>
+        </form>
+      </div>
+
+      <div class="flex items-center justify-between mt-4 mb-2">
+        <div class="text-[12px] font-semibold text-slate-300">分类与标签列表</div>
+        <div id="manage-tag-total" class="text-[11px] text-slate-500"></div>
+      </div>
+      <div id="manage-tags-list" class="flex-1 overflow-y-auto space-y-3 pr-1 no-scrollbar min-h-[120px]"></div>
+
+      <div class="mt-3 pt-3 border-t border-slate-700/80">
+        <button id="btn-done-manage-tags" class="w-full py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold text-[13px] text-center active-scale">完成管理</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 批量导出 -->
+  <div id="modal-batch-export" class="hidden fixed inset-0 z-[80] items-center justify-center p-4">
+    <div id="modal-batch-export-overlay" class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
+    <div class="relative w-full max-w-sm bg-slate-800 border border-slate-700 rounded-3xl p-5 shadow-2xl z-10">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-[15px] font-bold text-slate-100">📤 批量导出照片</h3>
+          <p id="batch-export-desc" class="text-[12px] text-slate-400 mt-1">已选择 0 张照片</p>
+        </div>
+        <button id="btn-close-batch-export" type="button" class="text-slate-400 hover:text-white p-2 text-lg leading-none">✕</button>
+      </div>
+      <button id="btn-share-batch-images" type="button" class="mt-4 w-full p-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-[14px] font-semibold text-left active-scale">📱 分享到手机 / 保存到相册<span class="block text-[11px] font-normal text-emerald-100 mt-1 leading-snug">打开系统分享菜单；若有“存储图像/保存图片”，请在菜单中选择</span></button>
+      <button id="btn-download-batch-zip" type="button" class="mt-2 w-full p-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-[14px] font-semibold text-left active-scale">🗜️ 下载 ZIP 压缩包<span class="block text-[11px] font-normal text-indigo-100 mt-1 leading-snug">适合大量照片或浏览器不支持直接分享的情况</span></button>
+      <p class="text-[11px] text-slate-500 leading-relaxed mt-3">受手机浏览器权限限制，网页不能静默写入系统相册。系统分享功能是否提供“保存到照片/相册”取决于设备和浏览器；ZIP 是兼容性兜底。</p>
+    </div>
+  </div>
+
+  <!-- Bottom Sheet Drawer for Tag/Date Assignment -->
+  <div id="drawer-tag-assign" class="hidden fixed inset-0 z-[60] flex flex-col justify-end">
+    <div id="drawer-tag-overlay" class="absolute inset-0 bg-black/75 backdrop-blur-sm transition-opacity"></div>
+
+    <div class="relative w-full bg-slate-800 border-t border-slate-700 rounded-t-3xl p-5 shadow-2xl max-h-[88vh] flex flex-col pb-safe z-10">
+      <div class="w-10 h-1 bg-slate-600 rounded-full mx-auto mb-3 shrink-0"></div>
+
+      <div class="flex items-center justify-between pb-3 border-b border-slate-700/80">
+        <div class="min-w-0">
+          <h2 class="text-[16px] font-bold text-slate-100 flex items-center gap-1.5">
+            <svg class="text-indigo-400" style="width:18px;height:18px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
+            编辑照片信息
+          </h2>
+          <p id="drawer-desc" class="text-[12px] text-slate-400 mt-1">点击标签快速选择绑定状态</p>
+        </div>
+        <button id="btn-close-drawer" class="text-slate-400 hover:text-slate-100 p-2.5 rounded-full bg-slate-700/60 text-sm leading-none">✕</button>
+      </div>
+
+      <div class="mt-3.5 p-3 rounded-xl bg-slate-900 border border-slate-700 flex items-center justify-between gap-2">
+        <label class="text-[13px] text-slate-300 font-semibold flex items-center gap-1.5 shrink-0" for="drawer-date-input">
+          <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+          自定义日期:
+        </label>
+        <input type="date" id="drawer-date-input" class="bg-slate-800 text-[13px] text-indigo-200 border border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500">
+      </div>
+
+      <form id="form-quick-tag" class="mt-3 space-y-2">
+        <select id="quick-tag-category-select" required aria-label="选择主分类" class="w-full bg-slate-900 rounded-xl px-3 py-2.5 text-[13px] text-slate-100 border border-slate-700 focus:outline-none focus:border-indigo-500"></select>
+        <div class="flex gap-2">
+          <input type="text" id="quick-tag-input" placeholder="在所选主分类下创建新标签…" required maxlength="32"
+            class="min-w-0 flex-1 bg-slate-900 rounded-xl px-3 py-2.5 text-[13px] text-slate-100 border border-slate-700 focus:outline-none focus:border-indigo-500">
+          <button type="submit" class="px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-[13px] shrink-0 active-scale">创建并绑定</button>
+        </div>
+      </form>
+
+      <div class="mt-4 flex-1 overflow-y-auto no-scrollbar max-h-[42vh]">
+        <div class="text-[12px] text-slate-400 mb-2 leading-snug">按主分类分组 · 已选标签会高亮；批量编辑时半亮表示部分照片已绑定</div>
+        <div id="drawer-tag-groups-box" class="space-y-3 min-h-[32px]"></div>
+      </div>
+
+      <div class="mt-4 pt-3 border-t border-slate-700/80">
+        <button id="btn-save-drawer-date" class="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[14px] text-center active-scale shadow-lg">保存修改</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fullscreen Photo Detail Viewer -->
+  <div id="modal-photo-viewer" class="hidden fixed inset-0 z-50 bg-black flex flex-col select-none overflow-hidden">
+    <!-- Top Bar -->
+    <div class="flex items-center justify-between p-4 bg-gradient-to-b from-black/90 via-black/40 to-transparent z-20 shrink-0 gap-2">
+      <div class="flex flex-col min-w-0">
+        <span id="detail-title" class="text-[13px] text-slate-200 font-medium truncate max-w-[42vw]">照片预览</span>
+        <span id="detail-date-badge" class="text-[11px] text-indigo-400 font-mono truncate">日期: -</span>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button id="btn-detail-edit" class="px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-[13px] font-semibold flex items-center gap-1.5 active-scale shadow-md">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+          编辑
+        </button>
+        <button id="btn-detail-delete" class="p-2.5 rounded-xl bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 active-scale" title="删除图片">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+        </button>
+        <button id="btn-close-detail" class="text-slate-400 hover:text-white p-2.5 text-lg leading-none">✕</button>
+      </div>
+    </div>
+
+    <!-- Image Display Container -->
+    <div id="swipe-stage" class="swipe-container flex-1 relative flex items-center justify-center overflow-hidden w-full h-full">
+      <button id="btn-prev-photo" class="absolute left-2 z-20 p-3 rounded-full bg-slate-900/60 text-white backdrop-blur-md border border-slate-700/60 active-scale hover:bg-slate-800 text-lg leading-none">❮</button>
+
+      <img id="detail-image" src="" alt="Full preview" class="max-h-full max-w-full object-contain cursor-grab active:cursor-grabbing">
+
+      <button id="btn-next-photo" class="absolute right-2 z-20 p-3 rounded-full bg-slate-900/60 text-white backdrop-blur-md border border-slate-700/60 active-scale hover:bg-slate-800 text-lg leading-none">❯</button>
+    </div>
+
+    <!-- Bottom Tags Overlay Bar -->
+    <div class="p-4 bg-gradient-to-t from-black/95 via-black/50 to-transparent pb-safe shrink-0 z-20">
+      <div class="flex items-center justify-between text-[12px] text-slate-400 mb-2 font-medium">
+        <span>已绑定标签 (单击图片退出，双击缩放):</span>
+        <span id="detail-index-counter" class="font-mono text-indigo-300">1 / 1</span>
+      </div>
+      <div id="detail-tags-box" class="flex flex-wrap gap-2 min-h-[28px]"></div>
+    </div>
+  </div>
+
+  <script>
+    window.addEventListener('DOMContentLoaded', function() {
+      'use strict';
+
+      const PRESET_COLORS = ['#8b5cf6', '#f59e0b', '#10b981', '#ec4899', '#3b82f6', '#6366f1', '#14b8a6', '#f43f5e', '#84cc16'];
+      function getAutoColor(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        return PRESET_COLORS[Math.abs(hash) % PRESET_COLORS.length];
+      }
+
+      function getTodayString() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      }
+
+      function generateSvgDataUrl(title, bg, textCol) {
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">
+          <rect width="600" height="600" fill="${bg}"/>
+          <circle cx="300" cy="240" r="90" fill="none" stroke="${textCol}" stroke-width="12" opacity="0.3"/>
+          <path d="M140 480 Q 300 300 460 480" fill="none" stroke="${textCol}" stroke-width="16" opacity="0.4"/>
+          <text x="50%" y="75%" dominant-baseline="middle" text-anchor="middle" fill="${textCol}" font-family="system-ui, sans-serif" font-size="36" font-weight="bold">${title}</text>
+        </svg>`;
+        return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+      }
+
+      const DEFAULT_CATEGORIES = [
+        { id: 'cat_life', name: '生活' },
+        { id: 'cat_work', name: '工作' },
+        { id: 'cat_uncategorized', name: '未分类' }
+      ];
+      const DEFAULT_TAGS = [
+        { id: 'tag_1', name: '风景', color: '#8b5cf6', categoryId: 'cat_life' },
+        { id: 'tag_2', name: '美食', color: '#f59e0b', categoryId: 'cat_life' },
+        { id: 'tag_3', name: '工作', color: '#10b981', categoryId: 'cat_work' },
+        { id: 'tag_4', name: '宠物', color: '#ec4899', categoryId: 'cat_life' },
+        { id: 'tag_5', name: '旅行', color: '#3b82f6', categoryId: 'cat_life' }
+      ];
+
+      const todayStr = getTodayString();
+      const DEFAULT_IMAGES = [
+        { id: 'img_1', name: '高山雪景.jpg', url: generateSvgDataUrl('高山雪景', '#1e1b4b', '#c084fc'), tags: ['tag_1', 'tag_5'], date: todayStr, width: 600, height: 600, mimeType: 'image/svg+xml' },
+        { id: 'img_2', name: '精选咖啡午餐.jpg', url: generateSvgDataUrl('精选咖啡午餐', '#451a03', '#fb923c'), tags: ['tag_2'], date: todayStr, width: 600, height: 600, mimeType: 'image/svg+xml' },
+        { id: 'img_3', name: '团队研讨会.jpg', url: generateSvgDataUrl('团队研讨会', '#064e3b', '#34d399'), tags: ['tag_3'], date: todayStr, width: 600, height: 600, mimeType: 'image/svg+xml' },
+        { id: 'img_4', name: '海边风光.jpg', url: generateSvgDataUrl('海边风光', '#0c4a6e', '#38bdf8'), tags: ['tag_1', 'tag_5'], date: todayStr, width: 600, height: 600, mimeType: 'image/svg+xml' }
+      ];
+
+      // --- App State ---
+      const appState = {
+        images: [],
+        categories: [],
+        tags: [],
+        selectedTagIds: [],
+        selectedDate: null,
+        searchQuery: '',
+        isMultiSelectMode: false,
+        showCalendarView: true,
+        filtersExpanded: false,
+        calendarCurrentYear: new Date().getFullYear(),
+        calendarCurrentMonth: new Date().getMonth(),
+        batchSelectedImageIds: new Set(),
+        activeDetailImageId: null,
+        drawerTargetImageIds: []
+      };
+
+      // --- 存储键与数据库 ---
+      const TAGS_STORAGE_KEY = 'app_photo_tags_v7';
+      const IMAGES_STORAGE_KEY = 'app_photo_images_v7';
+      const CATEGORIES_STORAGE_KEY = 'app_photo_categories_v7';
+      const DB_NAME = 'photo-tag-manager-db';
+      const DB_VERSION = 2;
+      const DB_STORE = 'appData';
+      let dbOpenPromise = null;
+      let imageSaveQueue = Promise.resolve(true);
+      let storageWarningShown = false;
+      let toastTimer = null;
+
+      function createId(prefix) {
+        return prefix + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+      }
+
+      function getUncategorizedCategoryId() {
+        const existing = appState.categories.find(c => c.name === '未分类');
+        return existing ? existing.id : (appState.categories[0] ? appState.categories[0].id : null);
+      }
+
+      function legacyCategoryIdForTag(tag) {
+        if (['风景', '美食', '宠物', '旅行', '家庭', '孩子', '朋友', '日常'].includes(tag.name)) return 'cat_life';
+        if (['工作', '客户', '合同', '案件', '会议'].includes(tag.name)) return 'cat_work';
+        return 'cat_uncategorized';
+      }
+
+      function openPhotoDatabase() {
+        if (!('indexedDB' in window)) return Promise.reject(new Error('浏览器不支持 IndexedDB'));
+        if (!dbOpenPromise) {
+          dbOpenPromise = new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onupgradeneeded = () => {
+              const db = request.result;
+              if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
+            };
+            request.onsuccess = () => {
+              const db = request.result;
+              db.onversionchange = () => db.close();
+              resolve(db);
+            };
+            request.onerror = () => reject(request.error || new Error('无法打开图片数据库'));
+            request.onblocked = () => reject(new Error('图片数据库被其他标签页占用，请关闭重复打开的页面后重试'));
+          }).catch(error => { dbOpenPromise = null; throw error; });
+        }
+        return dbOpenPromise;
+      }
+
+      async function dbGet(key) {
+        const db = await openPhotoDatabase();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(DB_STORE, 'readonly');
+          const req = tx.objectStore(DB_STORE).get(key);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error || new Error('读取图片数据失败'));
+        });
+      }
+
+      async function dbSet(key, value) {
+        const db = await openPhotoDatabase();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(DB_STORE, 'readwrite');
+          tx.objectStore(DB_STORE).put(value, key);
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => reject(tx.error || new Error('写入图片数据失败'));
+          tx.onabort = () => reject(tx.error || new Error('图片数据写入已中止'));
+        });
+      }
+
+      async function dbDelete(key) {
+        const db = await openPhotoDatabase();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(DB_STORE, 'readwrite');
+          tx.objectStore(DB_STORE).delete(key);
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => reject(tx.error || new Error('删除旧图片数据失败'));
+          tx.onabort = () => reject(tx.error || new Error('删除旧图片数据已中止'));
+        });
+      }
+
+      function safeReadLocalJSON(key, fallback) {
+        try {
+          const raw = localStorage.getItem(key);
+          return raw ? JSON.parse(raw) : fallback;
+        } catch (error) {
+          console.error(`读取本地配置 ${key} 失败：`, error);
+          return fallback;
+        }
+      }
+
+      // --- 数据规范化（无文件夹） ---
+      function normalizeAppData() {
+        if (!Array.isArray(appState.categories)) appState.categories = [];
+        const seenCategoryIds = new Set();
+        const seenCategoryNames = new Set();
+        appState.categories = appState.categories.filter(c => {
+          if (!c || typeof c.id !== 'string' || typeof c.name !== 'string' || !c.name.trim()) return false;
+          const nameKey = c.name.trim().toLowerCase();
+          if (seenCategoryIds.has(c.id) || seenCategoryNames.has(nameKey)) return false;
+          seenCategoryIds.add(c.id); seenCategoryNames.add(nameKey);
+          return true;
+        }).map(c => ({ id: c.id, name: c.name.trim() }));
+        if (!appState.categories.length) appState.categories = DEFAULT_CATEGORIES.map(c => ({ ...c }));
+
+        if (!Array.isArray(appState.tags)) appState.tags = [];
+        const seenTagIds = new Set();
+        appState.tags = appState.tags.filter(t => {
+          if (!t || typeof t.id !== 'string' || typeof t.name !== 'string' || !t.name.trim() || seenTagIds.has(t.id)) return false;
+          seenTagIds.add(t.id); return true;
+        });
+        const validCategoryIds = new Set(appState.categories.map(c => c.id));
+        const fallbackCategoryId = getUncategorizedCategoryId();
+        const seenTagNames = new Set();
+        appState.tags = appState.tags.filter(tag => {
+          tag.name = tag.name.trim();
+          if (!tag.color || !/^#[0-9a-f]{3,8}$/i.test(tag.color)) tag.color = getAutoColor(tag.name);
+          if (!tag.categoryId || !validCategoryIds.has(tag.categoryId)) {
+            const legacy = legacyCategoryIdForTag(tag);
+            tag.categoryId = validCategoryIds.has(legacy) ? legacy : fallbackCategoryId;
+          }
+          const key = `${tag.categoryId}::${tag.name.toLowerCase()}`;
+          if (seenTagNames.has(key)) return false;
+          seenTagNames.add(key);
+          return true;
+        });
+
+        if (!Array.isArray(appState.images)) appState.images = [];
+        const validTagIds = new Set(appState.tags.map(t => t.id));
+        const seenImageIds = new Set();
+        appState.images = appState.images.filter(img => {
+          if (!img || typeof img.id !== 'string' || typeof img.url !== 'string' || !/^(data:image\/|https?:\/\/)/i.test(img.url) || seenImageIds.has(img.id)) return false;
+          seenImageIds.add(img.id); return true;
+        });
+        appState.images.forEach(img => {
+          if (!img.name) img.name = '未命名照片';
+          if (!img.date) img.date = todayStr;
+          if (!Array.isArray(img.tags)) img.tags = [];
+          img.tags = [...new Set(img.tags.filter(id => validTagIds.has(id)))];
+          if (!Number.isFinite(img.width) || img.width < 0) img.width = null;
+          if (!Number.isFinite(img.height) || img.height < 0) img.height = null;
+          if (!img.mimeType) {
+            const match = img.url.match(/^data:([^;,]+)/i);
+            img.mimeType = match ? match[1] : 'image/jpeg';
+          }
+          if (!Number.isFinite(img.size) || img.size < 0) img.size = null;
+          delete img.folderId;
+        });
+      }
+
+      async function loadData() {
+        appState.categories = safeReadLocalJSON(CATEGORIES_STORAGE_KEY, DEFAULT_CATEGORIES.map(c => ({ ...c })));
+        appState.tags = safeReadLocalJSON(TAGS_STORAGE_KEY, DEFAULT_TAGS.map(t => ({ ...t })));
+
+        let indexedImages;
+        try { indexedImages = await dbGet('images'); }
+        catch (error) { console.warn('IndexedDB 不可用，将尝试兼容存储：', error); }
+
+        if (Array.isArray(indexedImages)) {
+          appState.images = indexedImages;
+        } else {
+          const legacyImages = safeReadLocalJSON(IMAGES_STORAGE_KEY, null);
+          if (Array.isArray(legacyImages)) appState.images = legacyImages;
+          else appState.images = DEFAULT_IMAGES.map(img => ({ ...img, tags: [...img.tags] }));
+        }
+
+        normalizeAppData();
+        saveCategories(); saveTags();
+        await saveImages();
+      }
+
+      function saveCategories() {
+        try { localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(appState.categories)); return true; }
+        catch (e) { console.error('保存分类失败：', e); showStorageWarning('保存主分类失败，请检查浏览器存储权限。'); return false; }
+      }
+
+      function saveTags() {
+        try { localStorage.setItem(TAGS_STORAGE_KEY, JSON.stringify(appState.tags)); return true; }
+        catch (e) { console.error('保存标签失败：', e); showStorageWarning('保存标签失败，请检查浏览器存储权限。'); return false; }
+      }
+
+      function showStorageWarning(message) {
+        if (storageWarningShown) return;
+        storageWarningShown = true;
+        try { showToast(message); } catch (_) { console.warn(message); }
+        setTimeout(() => { storageWarningShown = false; }, 5000);
+      }
+
+      async function saveImagesToLegacyStorage(snapshot) {
+        let hasIndexedImages = false;
+        try { hasIndexedImages = Array.isArray(await dbGet('images')); } catch (_) {}
+        try { localStorage.setItem(IMAGES_STORAGE_KEY, JSON.stringify(snapshot)); }
+        catch (error) { console.error('兼容存储写入失败：', error); return false; }
+        if (hasIndexedImages) {
+          try { await dbDelete('images'); }
+          catch (error) { console.error('无法清除 IndexedDB 中的旧照片数据：', error); return false; }
+        }
+        return true;
+      }
+
+      function saveImages() {
+        const snapshot = appState.images.map(img => ({ ...img, tags: Array.isArray(img.tags) ? [...img.tags] : [] }));
+        imageSaveQueue = imageSaveQueue.catch(() => false).then(async () => {
+          try {
+            await dbSet('images', snapshot);
+            try { localStorage.removeItem(IMAGES_STORAGE_KEY); } catch (_) {}
+            return true;
+          } catch (idbError) {
+            console.error('IndexedDB 保存照片失败，尝试兼容存储：', idbError);
+            const fallbackSaved = await saveImagesToLegacyStorage(snapshot);
+            if (fallbackSaved) return true;
+            showStorageWarning('照片未能保存到浏览器存储。请立即导出备份，并减少导入数量后重试。');
+            return false;
+          }
+        });
+        return imageSaveQueue;
+      }
+
+      async function persistBackupData(data) {
+        await imageSaveQueue.catch(() => false);
+        const keys = [CATEGORIES_STORAGE_KEY, TAGS_STORAGE_KEY];
+        const previous = {};
+        try {
+          keys.forEach(key => { previous[key] = localStorage.getItem(key); });
+          localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(data.categories));
+          localStorage.setItem(TAGS_STORAGE_KEY, JSON.stringify(data.tags));
+        } catch (error) {
+          keys.forEach(key => {
+            try {
+              if (previous[key] === null || previous[key] === undefined) localStorage.removeItem(key);
+              else localStorage.setItem(key, previous[key]);
+            } catch (restoreError) { console.error('回滚配置失败：', restoreError); }
+          });
+          console.error('恢复备份配置失败：', error);
+          return false;
+        }
+        try {
+          await dbSet('images', data.images);
+          try { localStorage.removeItem(IMAGES_STORAGE_KEY); } catch (_) {}
+          return true;
+        } catch (idbError) {
+          const fallbackSaved = await saveImagesToLegacyStorage(data.images);
+          if (fallbackSaved) return true;
+          keys.forEach(key => {
+            try {
+              if (previous[key] === null || previous[key] === undefined) localStorage.removeItem(key);
+              else localStorage.setItem(key, previous[key]);
+            } catch (restoreError) { console.error('回滚配置失败：', restoreError); }
+          });
+          console.error('恢复备份照片失败：', idbError);
+          return false;
+        }
+      }
+
+      function normalizeBackupData(raw) {
+        if (!raw || !Array.isArray(raw.tags) || !Array.isArray(raw.images)) {
+          throw new Error('文件格式不正确，未找到标签或照片数据。');
+        }
+
+        let categories = Array.isArray(raw.categories) ? raw.categories : DEFAULT_CATEGORIES.map(c => ({ ...c }));
+        categories = categories
+          .filter(c => c && typeof c.id === 'string' && typeof c.name === 'string' && c.name.trim())
+          .map(c => ({ id: c.id, name: c.name.trim() }));
+        {
+          const ids = new Set(), names = new Set();
+          categories = categories.filter(c => {
+            const nameKey = c.name.toLowerCase();
+            if (ids.has(c.id) || names.has(nameKey)) return false;
+            ids.add(c.id); names.add(nameKey); return true;
+          });
+        }
+        if (!categories.length) categories = DEFAULT_CATEGORIES.map(c => ({ ...c }));
+        const categoryIds = new Set(categories.map(c => c.id));
+        const fallbackCategoryId = (categories.find(c => c.name === '未分类') || categories[0]).id;
+
+        let tags = raw.tags
+          .filter(t => t && typeof t.id === 'string' && typeof t.name === 'string')
+          .map(t => ({
+            id: t.id,
+            name: t.name.trim(),
+            color: (t.color && /^#[0-9a-f]{3,8}$/i.test(t.color)) ? t.color : getAutoColor(t.name),
+            categoryId: categoryIds.has(t.categoryId)
+              ? t.categoryId
+              : (categoryIds.has(legacyCategoryIdForTag(t)) ? legacyCategoryIdForTag(t) : fallbackCategoryId)
+          }))
+          .filter(t => t.name);
+        {
+          const ids = new Set(), namesByCategory = new Set();
+          tags = tags.filter(t => {
+            const nameKey = `${t.categoryId}::${t.name.toLowerCase()}`;
+            if (ids.has(t.id) || namesByCategory.has(nameKey)) return false;
+            ids.add(t.id); namesByCategory.add(nameKey); return true;
+          });
+        }
+
+        const validTagIds = new Set(tags.map(t => t.id));
+        let images = raw.images
+          .filter(img => img && typeof img.url === 'string' && /^(data:image\/|https?:\/\/)/i.test(img.url))
+          .map((img, index) => ({
+            id: typeof img.id === 'string' && img.id ? img.id : createId('img'),
+            name: typeof img.name === 'string' && img.name ? img.name : `照片${index + 1}`,
+            url: img.url,
+            tags: Array.isArray(img.tags) ? [...new Set(img.tags.filter(id => validTagIds.has(id)))] : [],
+            date: typeof img.date === 'string' && img.date ? img.date : todayStr,
+            width: Number.isFinite(img.width) ? img.width : null,
+            height: Number.isFinite(img.height) ? img.height : null,
+            mimeType: typeof img.mimeType === 'string' ? img.mimeType : ((img.url.match(/^data:([^;,]+)/i) || [])[1] || 'image/jpeg'),
+            size: Number.isFinite(img.size) ? img.size : null,
+            lastModified: Number.isFinite(img.lastModified) ? img.lastModified : null
+          }));
+        {
+          const ids = new Set();
+          images = images.filter(img => { if (ids.has(img.id)) return false; ids.add(img.id); return true; });
+        }
+        return { categories, tags, images };
+      }
+
+      function exportBackup() {
+        const backup = {
+          app: '相册标签管家', version: 4, exportedAt: new Date().toISOString(),
+          categories: appState.categories, tags: appState.tags, images: appState.images
+        };
+        try {
+          const blob = new Blob([JSON.stringify(backup)], { type: 'application/json;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `相册标签备份_${getTodayString()}.json`;
+          document.body.appendChild(link); link.click(); link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1500);
+          showToast(`备份已导出（${appState.images.length} 张照片）`);
+        } catch (error) {
+          console.error('导出备份失败：', error);
+          alert('导出失败。若照片很多，可能是设备内存不足，请先分批整理或导出。');
+        }
+      }
+
+      async function importBackupFile(file) {
+        if (!file) return;
+        if (file.size > 250 * 1024 * 1024 && !confirm('备份文件超过 250 MB，恢复可能占用较多内存。建议在内存充足的设备上操作。仍要继续吗？')) return;
+        try {
+          const raw = JSON.parse(await file.text());
+          const data = normalizeBackupData(raw);
+          const photoCount = data.images.length;
+          if (!confirm(`即将用备份文件替换当前数据：\n主分类 ${data.categories.length} 个、标签 ${data.tags.length} 个、照片 ${photoCount} 张。\n建议先导出当前备份，确定继续吗？`)) return;
+          if (!await persistBackupData(data)) {
+            alert('恢复失败：浏览器存储空间不足或不支持该存储方式。原有界面数据未切换；请先导出备份、释放存储空间或分批处理。');
+            return;
+          }
+          appState.categories = data.categories;
+          appState.tags = data.tags;
+          appState.images = data.images;
+          appState.selectedTagIds = [];
+          appState.selectedDate = null;
+          appState.batchSelectedImageIds.clear();
+          appState.activeDetailImageId = null;
+          normalizeAppData();
+          saveCategories(); saveTags();
+          renderAll(); renderManageTagsList();
+          showToast(`恢复成功：${photoCount} 张照片`);
+        } catch (error) {
+          console.error('读取备份失败：', error);
+          alert(`恢复失败：${error && error.message ? error.message : '文件无法读取'}。请确认选择的是本工具导出的 JSON 备份文件。`);
+        }
+      }
+
+      function showToast(message) {
+        const toast = document.getElementById('toast');
+        const toastMsg = document.getElementById('toast-msg');
+        if (!toast || !toastMsg) return;
+        toastMsg.textContent = message;
+        toast.style.display = 'flex';
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { toast.style.display = 'none'; }, 1800);
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+      }
+
+      function renderCategorySelects() {
+        const selects = [document.getElementById('manage-tag-category-select'), document.getElementById('quick-tag-category-select')];
+        selects.forEach(select => {
+          if (!select) return;
+          const previous = select.value;
+          select.innerHTML = '';
+          appState.categories.forEach(category => {
+            const option = document.createElement('option');
+            option.value = category.id;
+            option.textContent = category.name;
+            select.appendChild(option);
+          });
+          if (appState.categories.some(c => c.id === previous)) select.value = previous;
+          else if (appState.categories[0]) select.value = appState.categories[0].id;
+        });
+      }
+
+      function setFiltersExpanded(expanded) {
+        appState.filtersExpanded = expanded;
+        const container = document.getElementById('filter-tags-container');
+        const chevron = document.getElementById('filter-chevron');
+        if (container) container.style.display = expanded ? 'flex' : 'none';
+        if (chevron) chevron.style.transform = expanded ? 'rotate(90deg)' : 'rotate(0deg)';
+      }
+
+      // --- Render Orchestrator ---
+      function renderAll() {
+        renderCategorySelects();
+        renderFilterTags();
+        updateCalendarVisibility();
+        renderImageGrid();
+        updateStats();
+      }
+
+      function updateStats() {
+        document.getElementById('stats-counter').textContent = `共 ${appState.images.length} 张照片 · ${appState.tags.length} 个标签`;
+      }
+
+      function updateCalendarVisibility() {
+        const cal = document.getElementById('calendar-view');
+        const toggleText = document.getElementById('view-toggle-text');
+        if (appState.showCalendarView) {
+          cal.style.display = 'block';
+          toggleText.textContent = '收起月视图';
+          renderCalendar();
+        } else {
+          cal.style.display = 'none';
+          toggleText.textContent = '展开月视图';
+        }
+      }
+
+      function renderFilterTags() {
+        const container = document.getElementById('filter-tags-container');
+        const resetBtn = document.getElementById('btn-reset-filters');
+        const countBadge = document.getElementById('filter-active-count');
+        container.innerHTML = '';
+        const hasAnyFilter = appState.selectedTagIds.length > 0 || !!appState.selectedDate;
+        resetBtn.style.display = hasAnyFilter ? 'inline-block' : 'none';
+
+        if (countBadge) {
+          const n = appState.selectedTagIds.length;
+          countBadge.textContent = n;
+          countBadge.style.display = n > 0 ? 'inline-block' : 'none';
+        }
+
+        appState.categories.forEach(category => {
+          const tags = appState.tags.filter(tag => tag.categoryId === category.id);
+          const section = document.createElement('section');
+          section.className = 'grid grid-cols-[4.75rem_minmax(0,1fr)] items-start gap-2.5 rounded-xl bg-slate-800/50 border border-slate-700/70 px-3 py-2.5';
+          const title = document.createElement('div');
+          title.className = 'min-w-0 pt-1';
+          const name = document.createElement('div');
+          name.className = 'text-[12px] font-bold text-slate-200 flex items-start gap-1.5 break-words';
+          const categoryDot = document.createElement('span');
+          categoryDot.className = 'w-1.5 h-3.5 rounded-full bg-indigo-400 shrink-0 mt-0.5';
+          const label = document.createElement('span');
+          label.textContent = category.name;
+          name.append(categoryDot, label);
+          const count = document.createElement('div');
+          count.className = 'text-[11px] text-slate-500 mt-1';
+          count.textContent = `${tags.length} 个标签`;
+          title.append(name, count);
+
+          const chips = document.createElement('div');
+          chips.className = 'flex flex-wrap gap-1.5 min-w-0';
+          if (!tags.length) {
+            const empty = document.createElement('span');
+            empty.className = 'text-[12px] text-slate-500 py-1';
+            empty.textContent = '暂无标签';
+            chips.appendChild(empty);
+          }
+          tags.forEach(tag => {
+            const isSelected = appState.selectedTagIds.includes(tag.id);
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = `px-3 py-2 rounded-lg text-[12px] font-medium flex items-center gap-1.5 transition active-scale ${isSelected ? 'ring-1 ring-white text-white shadow-sm' : 'bg-slate-900 text-slate-300 border border-slate-700 hover:border-slate-500'}`;
+            if (isSelected) chip.style.backgroundColor = tag.color;
+            const dot = document.createElement('span');
+            dot.className = 'w-2 h-2 rounded-full shrink-0';
+            dot.style.backgroundColor = isSelected ? '#fff' : tag.color;
+            const text = document.createElement('span');
+            text.textContent = tag.name;
+            chip.append(dot, text);
+            if (isSelected) {
+              const mark = document.createElement('span'); mark.className = 'text-[11px] font-bold'; mark.textContent = '✓'; chip.appendChild(mark);
+            }
+            chip.onclick = () => {
+              const index = appState.selectedTagIds.indexOf(tag.id);
+              if (index > -1) appState.selectedTagIds.splice(index, 1);
+              else appState.selectedTagIds.push(tag.id);
+              renderFilterTags(); renderImageGrid();
+            };
+            chips.appendChild(chip);
+          });
+          section.append(title, chips);
+          container.appendChild(section);
+        });
+
+        const summaryBar = document.getElementById('filter-summary');
+        const activeList = document.getElementById('active-tags-list');
+        if (hasAnyFilter) {
+          summaryBar.style.display = 'flex';
+          activeList.innerHTML = '';
+          if (appState.selectedDate) {
+            const dateBadge = document.createElement('span');
+            dateBadge.className = 'px-2.5 py-1 rounded text-[11px] bg-indigo-600 text-white shrink-0 font-medium';
+            dateBadge.textContent = `📅 ${appState.selectedDate}`;
+            activeList.appendChild(dateBadge);
+          }
+          appState.selectedTagIds.forEach(id => {
+            const tag = appState.tags.find(item => item.id === id);
+            if (tag) {
+              const category = appState.categories.find(c => c.id === tag.categoryId);
+              const badge = document.createElement('span');
+              badge.className = 'px-2.5 py-1 rounded text-[11px] text-white shrink-0 font-medium';
+              badge.style.backgroundColor = tag.color;
+              badge.textContent = `${category ? category.name + ' / ' : ''}${tag.name}`;
+              activeList.appendChild(badge);
+            }
+          });
+        } else summaryBar.style.display = 'none';
+      }
+
+      function openManageTagsModal() {
+        renderCategorySelects();
+        renderManageTagsList();
+        document.getElementById('modal-manage-tags').style.display = 'flex';
+      }
+
+      function renderManageTagsList() {
+        const container = document.getElementById('manage-tags-list');
+        if (!container) return;
+        container.innerHTML = '';
+        const totalEl = document.getElementById('manage-tag-total');
+        if (totalEl) totalEl.textContent = `${appState.categories.length} 个主分类 · ${appState.tags.length} 个标签`;
+        if (appState.categories.length === 0) {
+          container.innerHTML = '<div class="text-[13px] text-slate-500 italic py-4 text-center">暂无主分类，请在上方新建</div>';
+          return;
+        }
+
+        appState.categories.forEach(category => {
+          const tags = appState.tags.filter(tag => tag.categoryId === category.id);
+          const section = document.createElement('section');
+          section.className = 'rounded-2xl bg-slate-900/70 border border-slate-700/80 overflow-hidden';
+          const header = document.createElement('div');
+          header.className = 'flex items-center justify-between gap-2 px-3 py-2.5 bg-slate-700/40 border-b border-slate-700/80';
+          const heading = document.createElement('div'); heading.className = 'min-w-0';
+          const categoryName = document.createElement('div'); categoryName.className = 'text-[13px] font-bold text-slate-100'; categoryName.textContent = category.name;
+          const categoryCount = document.createElement('div'); categoryCount.className = 'text-[11px] text-slate-500 mt-0.5'; categoryCount.textContent = `${tags.length} 个标签`;
+          heading.append(categoryName, categoryCount);
+          const actions = document.createElement('div'); actions.className = 'flex gap-1.5 shrink-0';
+          const editCategory = document.createElement('button'); editCategory.type = 'button'; editCategory.className = 'px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-[11px] active-scale'; editCategory.textContent = '✏️ 改名';
+          editCategory.onclick = () => renameExistingCategory(category.id, category.name);
+          const delCategory = document.createElement('button'); delCategory.type = 'button'; delCategory.className = 'px-2.5 py-1.5 rounded-lg bg-rose-500/15 text-rose-300 text-[11px] active-scale'; delCategory.textContent = '🗑 删除';
+          delCategory.onclick = () => deleteCategory(category.id);
+          actions.append(editCategory, delCategory); header.append(heading, actions); section.appendChild(header);
+
+          const list = document.createElement('div'); list.className = 'p-2 space-y-1.5';
+          if (!tags.length) {
+            const empty = document.createElement('div'); empty.className = 'text-[12px] text-slate-500 py-2 text-center'; empty.textContent = '这个分类还没有标签'; list.appendChild(empty);
+          }
+          tags.forEach(tag => {
+            const row = document.createElement('div'); row.className = 'flex flex-wrap sm:flex-nowrap items-center gap-2 p-2 rounded-xl bg-slate-800/80';
+            const nameWrap = document.createElement('div'); nameWrap.className = 'flex items-center gap-2 min-w-[110px] flex-1';
+            const dot = document.createElement('span'); dot.className = 'w-2.5 h-2.5 rounded-full shrink-0'; dot.style.backgroundColor = tag.color;
+            const name = document.createElement('span'); name.className = 'text-[13px] text-slate-200 truncate'; name.textContent = tag.name;
+            nameWrap.append(dot, name);
+            const moveSelect = document.createElement('select'); moveSelect.className = 'min-w-0 w-full sm:w-40 sm:flex-none bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-[12px] text-slate-300';
+            appState.categories.forEach(c => { const option = document.createElement('option'); option.value = c.id; option.textContent = `归属：${c.name}`; moveSelect.appendChild(option); });
+            moveSelect.value = tag.categoryId;
+            moveSelect.onchange = () => {
+              if (appState.tags.some(t => t.id !== tag.id && t.categoryId === moveSelect.value && t.name.toLowerCase() === tag.name.toLowerCase())) {
+                alert('目标主分类下已有同名标签，请先修改标签名称。'); moveSelect.value = tag.categoryId; return;
+              }
+              tag.categoryId = moveSelect.value; saveTags(); renderAll(); renderManageTagsList(); renderCategorySelects(); showToast('标签已移动到新分类');
+            };
+            const btns = document.createElement('div'); btns.className = 'flex gap-1.5 justify-end ml-auto';
+            const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'px-2.5 py-2 rounded-lg bg-slate-700 text-slate-300 text-[12px] active-scale'; edit.textContent = '✏️'; edit.title = '修改标签名称'; edit.onclick = () => renameExistingTag(tag.id, tag.name);
+            const del = document.createElement('button'); del.type = 'button'; del.className = 'px-2.5 py-2 rounded-lg bg-rose-500/15 text-rose-300 text-[12px] active-scale'; del.textContent = '🗑'; del.title = '删除标签'; del.onclick = () => deleteExistingTag(tag.id);
+            btns.append(edit, del);
+            row.append(nameWrap, moveSelect, btns); list.appendChild(row);
+          });
+          section.appendChild(list); container.appendChild(section);
+        });
+      }
+
+      function addCategory(name) {
+        const trimmed = (name || '').trim();
+        if (!trimmed) return false;
+        if (appState.categories.some(c => c.name.toLowerCase() === trimmed.toLowerCase())) {
+          showToast('主分类名称已存在');
+          return false;
+        }
+        appState.categories.push({ id: createId('cat'), name: trimmed });
+        saveCategories();
+        renderAll();
+        renderManageTagsList();
+        return true;
+      }
+
+      function renameExistingCategory(categoryId, oldName) {
+        const newName = prompt('修改主分类名称：', oldName);
+        if (newName === null) return;
+        const trimmed = newName.trim();
+        if (!trimmed) { showToast('分类名称不能为空'); return; }
+        if (appState.categories.some(c => c.id !== categoryId && c.name.toLowerCase() === trimmed.toLowerCase())) {
+          showToast('已有同名主分类');
+          return;
+        }
+        const category = appState.categories.find(c => c.id === categoryId);
+        if (!category) return;
+        category.name = trimmed;
+        saveCategories();
+        renderAll();
+        renderManageTagsList();
+        showToast('主分类名称已修改');
+      }
+
+      function deleteCategory(categoryId) {
+        const category = appState.categories.find(c => c.id === categoryId);
+        if (!category) return;
+        const categoryTags = appState.tags.filter(tag => tag.categoryId === categoryId);
+        const message = categoryTags.length
+          ? `确定删除主分类“${category.name}”吗？其中 ${categoryTags.length} 个标签会移动到其他主分类，不会解除照片上的标签关联。`
+          : `确定删除空主分类“${category.name}”吗？`;
+        if (!confirm(message)) return;
+
+        let fallback = appState.categories.find(c => c.id !== categoryId && c.name === '未分类')
+          || appState.categories.find(c => c.id !== categoryId);
+        if (!fallback && categoryTags.length) {
+          fallback = { id: createId('cat'), name: '未分类' };
+          appState.categories.push(fallback);
+        }
+        if (fallback) categoryTags.forEach(tag => { tag.categoryId = fallback.id; });
+        appState.categories = appState.categories.filter(c => c.id !== categoryId);
+        if (!appState.categories.length) appState.categories.push({ id: createId('cat'), name: '未分类' });
+        const validIds = new Set(appState.categories.map(c => c.id));
+        appState.tags.forEach(tag => { if (!validIds.has(tag.categoryId)) tag.categoryId = appState.categories[0].id; });
+        saveCategories(); saveTags();
+        renderAll(); renderManageTagsList();
+        showToast('主分类已删除');
+      }
+
+      function deleteExistingTag(tagId) {
+        const tag = appState.tags.find(t => t.id === tagId);
+        if (!tag) return;
+        if (confirm(`确定要删除标签“${tag.name}”吗？这会将所有照片解除该标签的关联。`)) {
+          appState.tags = appState.tags.filter(t => t.id !== tagId);
+          appState.selectedTagIds = appState.selectedTagIds.filter(id => id !== tagId);
+          appState.images.forEach(img => { img.tags = img.tags.filter(tId => tId !== tagId); });
+          saveTags(); saveImages();
+          renderAll(); renderManageTagsList(); renderDrawerTags();
+          showToast(`已删除标签“${tag.name}”`);
+        }
+      }
+
+      function renameExistingTag(tagId, oldName) {
+        const newName = prompt('修改标签名称：', oldName);
+        if (newName === null) return;
+        const trimmed = newName.trim();
+        if (!trimmed) { showToast('标签名称不能为空'); return; }
+        const tag = appState.tags.find(t => t.id === tagId);
+        if (!tag) return;
+        if (appState.tags.some(t => t.id !== tagId && t.categoryId === tag.categoryId && t.name.toLowerCase() === trimmed.toLowerCase())) {
+          showToast('该主分类下已有同名标签'); return;
+        }
+        tag.name = trimmed;
+        saveTags();
+        renderAll(); renderManageTagsList(); renderDrawerTags();
+        showToast('标签名称修改成功');
+      }
+
+      function getFilteredImages() {
+        return appState.images.filter(img => {
+          if (appState.selectedDate && img.date !== appState.selectedDate) return false;
+
+          const q = appState.searchQuery.trim().toLowerCase();
+          if (q !== '') {
+            const matchName = img.name.toLowerCase().includes(q);
+            const matchTag = img.tags.some(tId => {
+              const tagObj = appState.tags.find(t => t.id === tId);
+              if (!tagObj) return false;
+              const categoryObj = appState.categories.find(c => c.id === tagObj.categoryId);
+              return tagObj.name.toLowerCase().includes(q) || (categoryObj && categoryObj.name.toLowerCase().includes(q));
+            });
+            const matchDate = img.date && img.date.includes(q);
+            if (!matchName && !matchTag && !matchDate) return false;
+          }
+
+          if (appState.selectedTagIds.length > 0) {
+            const hasAllSelected = appState.selectedTagIds.every(selId => img.tags.includes(selId));
+            if (!hasAllSelected) return false;
+          }
+
+          return true;
+        });
+      }
+
+      function renderCalendar() {
+        const grid = document.getElementById('calendar-days-grid');
+        const title = document.getElementById('cal-month-title');
+        if (!grid) return;
+        grid.innerHTML = '';
+
+        const year = appState.calendarCurrentYear;
+        const month = appState.calendarCurrentMonth;
+        title.textContent = `${year}年 ${month + 1}月`;
+
+        const firstDayIndex = new Date(year, month, 1).getDay();
+        const totalDays = new Date(year, month + 1, 0).getDate();
+
+        for (let i = 0; i < firstDayIndex; i++) {
+          const emptyCell = document.createElement('div');
+          emptyCell.className = 'h-11 rounded-xl bg-slate-900/20';
+          grid.appendChild(emptyCell);
+        }
+
+        const countsByDate = {};
+        appState.images.forEach(img => {
+          if (img.date) countsByDate[img.date] = (countsByDate[img.date] || 0) + 1;
+        });
+
+        for (let day = 1; day <= totalDays; day++) {
+          const monthStr = String(month + 1).padStart(2, '0');
+          const dayStr = String(day).padStart(2, '0');
+          const formattedDate = `${year}-${monthStr}-${dayStr}`;
+
+          const photoCount = countsByDate[formattedDate] || 0;
+          const isSelected = appState.selectedDate === formattedDate;
+
+          const dayCell = document.createElement('button');
+          dayCell.type = 'button';
+          dayCell.className = `h-11 rounded-xl flex flex-col items-center justify-center relative transition active-scale ${
+            isSelected
+              ? 'bg-indigo-600 text-white font-bold ring-2 ring-white shadow-lg'
+              : photoCount > 0
+              ? 'bg-slate-700/80 text-slate-100 hover:bg-slate-600'
+              : 'bg-slate-800/40 text-slate-500 hover:bg-slate-800'
+          }`;
+          dayCell.innerHTML = `
+            <span class="text-[13px] leading-none">${day}</span>
+            ${photoCount > 0 ? `<span class="text-[10px] ${isSelected ? 'text-indigo-200' : 'text-indigo-400'} leading-none mt-1">${photoCount}张</span>` : ''}
+          `;
+
+          dayCell.onclick = () => {
+            appState.selectedDate = appState.selectedDate === formattedDate ? null : formattedDate;
+            updateCalendarHint();
+            renderFilterTags();
+            renderCalendar();
+            renderImageGrid();
+          };
+
+          grid.appendChild(dayCell);
+        }
+
+        updateCalendarHint();
+      }
+
+      function updateCalendarHint() {
+        const hintBox = document.getElementById('cal-filter-hint');
+        const dateText = document.getElementById('cal-selected-date-text');
+        if (appState.selectedDate) {
+          hintBox.style.display = 'flex';
+          dateText.textContent = `当前筛选: ${appState.selectedDate}`;
+        } else {
+          hintBox.style.display = 'none';
+        }
+      }
+
+      function renderImageGrid() {
+        const grid = document.getElementById('image-grid');
+        const emptyState = document.getElementById('empty-state');
+        const filtered = getFilteredImages();
+        grid.style.display = 'grid';
+        document.getElementById('content-eyebrow').textContent = '照片空间';
+        document.getElementById('content-title').textContent = '全部照片';
+        document.getElementById('content-description').textContent = filtered.length
+          ? '点击照片查看大图，右上角可快速编辑标签和日期'
+          : '导入照片后会自动显示在这里';
+        document.getElementById('photo-filter-tools').style.display = 'block';
+        document.getElementById('btn-toggle-view').style.display = 'flex';
+        document.getElementById('btn-toggle-select').style.display = 'block';
+        document.getElementById('search-input').placeholder = '搜索名称、日期或标签...';
+        document.getElementById('filtered-count').textContent = `${filtered.length} 张`;
+
+        if (!filtered.length) {
+          grid.innerHTML = '';
+          emptyState.style.display = 'flex';
+          emptyState.querySelector('p.font-semibold').textContent = appState.images.length ? '没有匹配的照片' : '还没有照片';
+          emptyState.querySelector('p.text-slate-500').textContent = appState.images.length
+            ? '可清除筛选条件，或换一个关键词'
+            : '点击右上角“导入”添加照片';
+          return;
+        }
+        emptyState.style.display = 'none';
+
+        grid.innerHTML = filtered.map(img => {
+          const isSelected = appState.batchSelectedImageIds.has(img.id);
+          const dotsHtml = img.tags.slice(0, 3).map(tId => {
+            const tag = appState.tags.find(t => t.id === tId);
+            return tag ? `<span class="inline-block w-2.5 h-2.5 rounded-full ring-1 ring-black/40" style="background-color:${tag.color}"></span>` : '';
+          }).join('');
+          const safeId = escapeHtml(img.id), safeUrl = escapeHtml(img.url), safeName = escapeHtml(img.name);
+          return `<div data-id="${safeId}" class="photo-card relative aspect-square rounded-2xl overflow-hidden bg-slate-800 border border-slate-700/80 shadow-md group cursor-pointer active-scale">
+            <img src="${safeUrl}" alt="${safeName}" loading="lazy" decoding="async" draggable="false" class="w-full h-full object-cover">
+            <div class="absolute top-2 left-2 flex items-center gap-1 bg-black/50 backdrop-blur-md px-2 py-1.5 rounded-full pointer-events-none">${dotsHtml || '<span class="text-[10px] text-slate-400">无标签</span>'}</div>
+            ${!appState.isMultiSelectMode ? `<button type="button" data-quick-tag="${safeId}" class="btn-quick-tag absolute top-2 right-2 w-8 h-8 rounded-full bg-slate-900/80 backdrop-blur-md border border-slate-700 text-slate-200 hover:text-white flex items-center justify-center text-[13px] shadow-lg active-scale" title="快速编辑">✎</button>` : ''}
+            ${appState.isMultiSelectMode ? `<div class="absolute inset-0 bg-black/30 flex items-start justify-end p-2 pointer-events-none"><div class="w-7 h-7 rounded-full border-2 flex items-center justify-center ${isSelected ? 'bg-indigo-600 border-white text-white font-bold text-[13px]' : 'border-white/80 bg-black/40'}">${isSelected ? '✓' : ''}</div></div>` : ''}
+            <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-2.5 pt-6 pointer-events-none"><p class="text-[12px] font-medium text-slate-200 truncate">${safeName}</p><p class="text-[10px] text-indigo-300/90 font-mono truncate mt-0.5">${escapeHtml(img.date || '未设置')}</p></div>
+          </div>`;
+        }).join('');
+
+        // 图片加载失败占位
+        grid.querySelectorAll('.photo-card img').forEach(imgEl => {
+          const applyFallback = () => {
+            if (imgEl.dataset.fallbackApplied) return;
+            imgEl.dataset.fallbackApplied = '1';
+            imgEl.style.display = 'none';
+            const parent = imgEl.parentElement;
+            if (parent && !parent.querySelector('.img-fallback')) {
+              const fb = document.createElement('div');
+              fb.className = 'img-fallback absolute inset-0 flex flex-col items-center justify-center gap-1 text-slate-500 bg-slate-800';
+              fb.innerHTML = '<svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg><span class="text-[11px]">图片无法显示</span>';
+              parent.appendChild(fb);
+            }
+          };
+          imgEl.addEventListener('error', applyFallback);
+          if (imgEl.complete && imgEl.naturalWidth === 0) applyFallback();
+        });
+
+        grid.querySelectorAll('.photo-card').forEach(card => {
+          const id = card.getAttribute('data-id');
+          card.onclick = e => {
+            const quickBtn = e.target.closest('.btn-quick-tag');
+            if (quickBtn) { e.stopPropagation(); openAssignDrawer([id]); return; }
+            if (appState.isMultiSelectMode) {
+              if (appState.batchSelectedImageIds.has(id)) appState.batchSelectedImageIds.delete(id);
+              else appState.batchSelectedImageIds.add(id);
+              updateBatchBar();
+              renderImageGrid();
+            } else {
+              openDetailViewer(id);
+            }
+          };
+        });
+
+        updateBatchBar();
+      }
+
+      function updateBatchBar() {
+        const validIds = new Set(appState.images.map(img => img.id));
+        appState.batchSelectedImageIds = new Set([...appState.batchSelectedImageIds].filter(id => validIds.has(id)));
+        const badge = document.getElementById('batch-count-badge');
+        if (badge) badge.textContent = appState.batchSelectedImageIds.size;
+        const selectAllBtn = document.getElementById('btn-batch-select-all');
+        if (selectAllBtn) {
+          const filteredCount = getFilteredImages().length;
+          selectAllBtn.textContent = (filteredCount > 0 && appState.batchSelectedImageIds.size >= filteredCount) ? '取消全选' : '全选';
+        }
+      }
+
+      function toggleMultiSelectMode(force) {
+        appState.isMultiSelectMode = force !== undefined ? force : !appState.isMultiSelectMode;
+        const btn = document.getElementById('btn-toggle-select');
+        const batchBar = document.getElementById('batch-bar');
+
+        if (appState.isMultiSelectMode) {
+          btn.textContent = '取消';
+          btn.className = 'px-3 py-2 rounded-xl text-[12px] font-semibold bg-indigo-600 text-white transition active-scale whitespace-nowrap';
+          batchBar.style.display = 'flex';
+        } else {
+          btn.textContent = '多选';
+          btn.className = 'px-3 py-2 rounded-xl text-[12px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition active-scale whitespace-nowrap';
+          batchBar.style.display = 'none';
+          appState.batchSelectedImageIds.clear();
+        }
+        updateBatchBar();
+        renderImageGrid();
+      }
+
+      // --- Bottom Edit Drawer ---
+      function openAssignDrawer(imageIds) {
+        appState.drawerTargetImageIds = imageIds;
+        const desc = document.getElementById('drawer-desc');
+        const dateInput = document.getElementById('drawer-date-input');
+
+        if (imageIds.length === 1) {
+          const img = appState.images.find(i => i.id === imageIds[0]);
+          desc.textContent = img ? `编辑《${img.name}》的信息` : '调整图片信息';
+          dateInput.value = img ? (img.date || '') : '';
+        } else {
+          desc.textContent = `批量编辑 ${imageIds.length} 张照片；日期留空表示不修改`;
+          dateInput.value = '';
+        }
+
+        renderDrawerTags();
+        document.getElementById('drawer-tag-assign').style.display = 'flex';
+      }
+
+      function renderDrawerTags() {
+        const groupsBox = document.getElementById('drawer-tag-groups-box');
+        if (!groupsBox) return;
+        groupsBox.innerHTML = '';
+        renderCategorySelects();
+        const targetImages = appState.images.filter(img => appState.drawerTargetImageIds.includes(img.id));
+        if (targetImages.length === 0) {
+          groupsBox.innerHTML = '<span class="text-[13px] text-slate-500">没有可编辑的照片</span>';
+          return;
+        }
+        if (appState.tags.length === 0) {
+          groupsBox.innerHTML = '<div class="text-[13px] text-slate-500 py-2">暂无标签，请在上方选择主分类并创建标签。</div>';
+          return;
+        }
+
+        appState.categories.forEach(category => {
+          const tags = appState.tags.filter(tag => tag.categoryId === category.id);
+          const section = document.createElement('section');
+          section.className = 'rounded-xl bg-slate-900/60 border border-slate-700/80 p-3';
+          const header = document.createElement('div');
+          header.className = 'flex items-center justify-between gap-2 mb-2.5';
+          const title = document.createElement('span'); title.className = 'text-[12px] font-bold text-slate-200'; title.textContent = category.name;
+          const count = document.createElement('span'); count.className = 'text-[11px] text-slate-500'; count.textContent = `${tags.length} 个标签`;
+          header.append(title, count); section.appendChild(header);
+          const chips = document.createElement('div'); chips.className = 'flex flex-wrap gap-2';
+          if (!tags.length) {
+            const empty = document.createElement('span'); empty.className = 'text-[12px] text-slate-500'; empty.textContent = '暂无标签'; chips.appendChild(empty);
+          }
+          tags.forEach(tag => {
+            const attachedCount = targetImages.filter(img => img.tags.includes(tag.id)).length;
+            const isFullyAttached = attachedCount === targetImages.length;
+            const isPartiallyAttached = attachedCount > 0 && !isFullyAttached;
+            const chip = document.createElement('button'); chip.type = 'button';
+            chip.className = `px-3 py-2 rounded-xl text-[13px] font-semibold flex items-center gap-1.5 border transition active-scale ${isFullyAttached ? 'bg-indigo-600 text-white border-indigo-400 shadow' : isPartiallyAttached ? 'bg-amber-900/60 text-amber-100 border-amber-400/70' : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'}`;
+            const dot = document.createElement('span'); dot.className = 'w-2 h-2 rounded-full shrink-0'; dot.style.backgroundColor = isFullyAttached ? '#fff' : tag.color;
+            const label = document.createElement('span'); label.textContent = tag.name;
+            const mark = document.createElement('span'); mark.className = 'text-[11px] ml-0.5 font-bold'; mark.textContent = isFullyAttached ? '✓' : isPartiallyAttached ? '半' : '+';
+            chip.append(dot, label, mark);
+            chip.onclick = () => {
+              targetImages.forEach(img => {
+                if (isFullyAttached) img.tags = img.tags.filter(id => id !== tag.id);
+                else if (!img.tags.includes(tag.id)) img.tags.push(tag.id);
+              });
+              saveImages(); renderDrawerTags(); renderAll();
+              if (appState.activeDetailImageId) renderDetailTags();
+              showToast(isFullyAttached ? '已解绑标签' : '已绑定标签');
+            };
+            chips.appendChild(chip);
+          });
+          section.appendChild(chips); groupsBox.appendChild(section);
+        });
+      }
+
+      // --- Fullscreen Photo Viewer ---
+      let zoomScale = 1;
+      let panX = 0;
+      let panY = 0;
+
+      function resetZoom() {
+        zoomScale = 1;
+        panX = 0;
+        panY = 0;
+        applyTransform();
+      }
+
+      function clampPan() {
+        const img = document.getElementById('detail-image');
+        const stage = document.getElementById('swipe-stage');
+        if (!img || !stage || zoomScale <= 1) { panX = 0; panY = 0; return; }
+        const maxX = Math.max(0, (img.clientWidth * zoomScale - stage.clientWidth) / 2);
+        const maxY = Math.max(0, (img.clientHeight * zoomScale - stage.clientHeight) / 2);
+        panX = Math.min(maxX, Math.max(-maxX, panX));
+        panY = Math.min(maxY, Math.max(-maxY, panY));
+      }
+
+      function applyTransform() {
+        const img = document.getElementById('detail-image');
+        if (img) img.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomScale})`;
+      }
+
+      function toggleZoomAt(clientX, clientY) {
+        if (zoomScale > 1) { resetZoom(); return; }
+        const stage = document.getElementById('swipe-stage');
+        if (!stage) { zoomScale = 2.5; applyTransform(); return; }
+        const rect = stage.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        zoomScale = 2.5;
+        panX = -(clientX - cx) * (zoomScale - 1);
+        panY = -(clientY - cy) * (zoomScale - 1);
+        clampPan();
+        applyTransform();
+      }
+
+      function closeDetailViewer() {
+        const modal = document.getElementById('modal-photo-viewer');
+        if (!modal || modal.classList.contains('hidden')) return;
+        modal.classList.add('hidden');
+        document.body.style.overflow = '';
+        resetZoom();
+        lastTapAt = 0;
+        clearTimeout(pendingTapTimer);
+        pendingTapTimer = null;
+      }
+
+      function openDetailViewer(imageId) {
+        const filteredList = getFilteredImages();
+        const index = filteredList.findIndex(i => i.id === imageId);
+        if (index === -1) return;
+
+        appState.activeDetailImageId = imageId;
+        resetZoom();
+        suppressTapUntil = 0;
+        lastTapAt = 0;
+        clearTimeout(pendingTapTimer);
+        pendingTapTimer = null;
+        updateDetailViewerContent(index);
+
+        document.getElementById('modal-photo-viewer').classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+      }
+
+      function updateDetailViewerContent(index) {
+        const filteredList = getFilteredImages();
+        if (filteredList.length === 0 || index < 0 || index >= filteredList.length) return;
+
+        const img = filteredList[index];
+        appState.activeDetailImageId = img.id;
+
+        document.getElementById('detail-image').src = img.url;
+        document.getElementById('detail-title').textContent = img.name;
+        updateActiveDetailMeta();
+        document.getElementById('detail-index-counter').textContent = `${index + 1} / ${filteredList.length}`;
+        renderDetailTags();
+      }
+
+      function updateActiveDetailMeta() {
+        const image = appState.images.find(i => i.id === appState.activeDetailImageId);
+        if (!image) return;
+        const dimensions = image.width && image.height ? ` · ${image.width}×${image.height}` : '';
+        document.getElementById('detail-date-badge').textContent = `${image.date || '未设置'}${dimensions}`;
+      }
+
+      function navigateDetailPhoto(direction) {
+        const filteredList = getFilteredImages();
+        if (filteredList.length === 0) return;
+
+        const currentIndex = filteredList.findIndex(i => i.id === appState.activeDetailImageId);
+        if (currentIndex === -1) return;
+
+        let nextIndex = currentIndex + direction;
+        if (nextIndex < 0) nextIndex = filteredList.length - 1;
+        if (nextIndex >= filteredList.length) nextIndex = 0;
+
+        resetZoom();
+        updateDetailViewerContent(nextIndex);
+      }
+
+      function renderDetailTags() {
+        const box = document.getElementById('detail-tags-box');
+        const img = appState.images.find(i => i.id === appState.activeDetailImageId);
+        box.innerHTML = '';
+
+        if (!img || img.tags.length === 0) {
+          box.innerHTML = '<span class="text-[13px] text-slate-500 italic">暂无绑定的标签</span>';
+          return;
+        }
+
+        img.tags.forEach(tId => {
+          const tag = appState.tags.find(t => t.id === tId);
+          if (!tag) return;
+          const badge = document.createElement('span');
+          badge.className = 'px-3 py-1.5 rounded-lg text-[12px] font-medium text-white flex items-center gap-1.5 shadow-sm';
+          badge.style.backgroundColor = tag.color;
+          badge.innerHTML = `<span>${escapeHtml(tag.name)}</span><button type="button" class="hover:text-slate-200 text-[12px] font-bold p-0.5 leading-none" title="解绑">✕</button>`;
+          badge.querySelector('button').onclick = (e) => {
+            e.stopPropagation();
+            img.tags = img.tags.filter(id => id !== tag.id);
+            saveImages();
+            renderDetailTags();
+            renderAll();
+            showToast('解绑成功');
+          };
+          box.appendChild(badge);
+        });
+      }
+
+      // ===== Touch / Mouse 手势 =====
+      let touchStartX = 0;
+      let touchStartY = 0;
+      let initialPinchDist = 0;
+      let isDragging = false;
+      let dragStartX = 0;
+      let dragStartY = 0;
+      let suppressTapUntil = 0;
+      let pendingTapTimer = null;
+      let lastTapAt = 0;
+      let mouseDragging = false;
+      let mouseDownX = 0;
+      let mouseDownY = 0;
+      let mouseDownClientX = 0;
+      let mouseDownClientY = 0;
+
+      const DOUBLE_TAP_WINDOW = 260;
+      const TAP_EXIT_DELAY = 270;
+
+      function getPinchDistance(e) {
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      }
+
+      function handleStageTap(clientX, clientY) {
+        const now = Date.now();
+        if (now - lastTapAt < DOUBLE_TAP_WINDOW) {
+          clearTimeout(pendingTapTimer);
+          pendingTapTimer = null;
+          lastTapAt = 0;
+          toggleZoomAt(clientX, clientY);
+          return;
+        }
+        lastTapAt = now;
+        clearTimeout(pendingTapTimer);
+        pendingTapTimer = setTimeout(() => {
+          pendingTapTimer = null;
+          closeDetailViewer();
+        }, TAP_EXIT_DELAY);
+      }
+
+      function setupSwipeAndZoomGestures() {
+        const stage = document.getElementById('swipe-stage');
+        const img = document.getElementById('detail-image');
+        if (!stage || !img) return;
+
+        stage.addEventListener('touchstart', (e) => {
+          if (e.touches.length === 2) {
+            initialPinchDist = getPinchDistance(e);
+            isDragging = false;
+            suppressTapUntil = Date.now() + 400;
+          } else if (e.touches.length === 1) {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+            dragStartX = touchStartX - panX;
+            dragStartY = touchStartY - panY;
+            if (zoomScale > 1) isDragging = true;
+          }
+        }, { passive: true });
+
+        stage.addEventListener('touchmove', (e) => {
+          if (e.touches.length === 2 && initialPinchDist > 0) {
+            const currentDist = getPinchDistance(e);
+            zoomScale = Math.min(Math.max(1, zoomScale * (currentDist / initialPinchDist)), 4);
+            initialPinchDist = currentDist;
+            if (zoomScale <= 1) { panX = 0; panY = 0; }
+            else clampPan();
+            applyTransform();
+            suppressTapUntil = Date.now() + 300;
+          } else if (e.touches.length === 1 && isDragging && zoomScale > 1) {
+            panX = e.touches[0].clientX - dragStartX;
+            panY = e.touches[0].clientY - dragStartY;
+            clampPan();
+            applyTransform();
+          }
+        }, { passive: true });
+
+        stage.addEventListener('touchend', (e) => {
+          if (e.touches.length < 2) initialPinchDist = 0;
+          if (e.touches.length === 0) isDragging = false;
+
+          if (e.changedTouches.length !== 1) return;
+          const te = e.changedTouches[0];
+          const diffX = te.clientX - touchStartX;
+          const diffY = te.clientY - touchStartY;
+          const moved = Math.hypot(diffX, diffY) > 12;
+
+          if (moved) {
+            suppressTapUntil = Date.now() + 400;
+            if (zoomScale === 1 && Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 40) {
+              if (diffX < 0) navigateDetailPhoto(1);
+              else navigateDetailPhoto(-1);
+            }
+          }
+        }, { passive: true });
+
+        stage.addEventListener('mousedown', (e) => {
+          if (zoomScale <= 1 || e.button !== 0) return;
+          mouseDragging = true;
+          mouseDownClientX = e.clientX;
+          mouseDownClientY = e.clientY;
+          mouseDownX = e.clientX - panX;
+          mouseDownY = e.clientY - panY;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+          if (!mouseDragging) return;
+          panX = e.clientX - mouseDownX;
+          panY = e.clientY - mouseDownY;
+          clampPan();
+          applyTransform();
+        });
+
+        window.addEventListener('mouseup', (e) => {
+          if (!mouseDragging) return;
+          const moved = Math.hypot(e.clientX - mouseDownClientX, e.clientY - mouseDownClientY) > 5;
+          mouseDragging = false;
+          if (moved) {
+            suppressTapUntil = Date.now() + 220;
+          }
+        });
+
+        stage.addEventListener('click', (e) => {
+          if (e.target.closest('button')) return;
+          if (Date.now() < suppressTapUntil) return;
+          if (mouseDragging) return;
+          handleStageTap(e.clientX, e.clientY);
+        });
+
+        img.addEventListener('error', () => {
+          showToast('这张图片无法显示，可能格式不受支持');
+        });
+      }
+
+      // --- 导入 ---
+      function readFileAsDataURL(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(reader.error || new Error(`读取 ${file.name} 失败`));
+          reader.onabort = () => reject(new Error(`读取 ${file.name} 已取消`));
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function readImageDimensions(dataUrl) {
+        return new Promise(resolve => {
+          const image = new Image();
+          image.onload = () => resolve({ width: image.naturalWidth || null, height: image.naturalHeight || null });
+          image.onerror = () => resolve({ width: null, height: null });
+          image.src = dataUrl;
+        });
+      }
+
+      function inferImageMimeType(file) {
+        if (file && file.type && file.type.startsWith('image/')) return file.type;
+        const ext = String(file && file.name || '').split('.').pop().toLowerCase();
+        const map = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml', heic: 'image/heic', heif: 'image/heif', avif: 'image/avif', tif: 'image/tiff', tiff: 'image/tiff' };
+        return map[ext] || '';
+      }
+
+      async function importImageFiles(fileList) {
+        const files = Array.from(fileList || []).filter(file => !!inferImageMimeType(file));
+        if (!files.length) { showToast('没有可导入的图片文件'); return; }
+
+        const selectedTags = [...appState.selectedTagIds];
+        let imported = 0;
+        const failures = [];
+
+        for (let index = 0; index < files.length; index++) {
+          const file = files[index];
+          try {
+            let dataUrl = await readFileAsDataURL(file);
+            const mimeType = inferImageMimeType(file) || 'application/octet-stream';
+            if (mimeType.startsWith('image/') && /^data:application\/octet-stream/i.test(dataUrl)) {
+              dataUrl = dataUrl.replace(/^data:application\/octet-stream/i, `data:${mimeType}`);
+            }
+            const dimensions = await readImageDimensions(dataUrl);
+            let imageDate = todayStr;
+            if (file.lastModified) {
+              const d = new Date(file.lastModified);
+              if (!Number.isNaN(d.getTime())) {
+                imageDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+              }
+            }
+            appState.images.unshift({
+              id: createId('img'),
+              name: file.name || `照片${index + 1}`,
+              url: dataUrl,
+              tags: [...selectedTags],
+              date: imageDate,
+              width: dimensions.width,
+              height: dimensions.height,
+              mimeType,
+              size: Number.isFinite(file.size) ? file.size : null,
+              lastModified: Number.isFinite(file.lastModified) ? file.lastModified : null
+            });
+            imported++;
+          } catch (error) {
+            console.error('导入图片失败：', file.name, error);
+            failures.push(file.name || `第 ${index + 1} 张`);
+          }
+        }
+
+        if (imported > 0) {
+          appState.selectedDate = null;
+          appState.searchQuery = '';
+          const searchBox = document.getElementById('search-input');
+          const clearSearch = document.getElementById('btn-clear-search');
+          if (searchBox) searchBox.value = '';
+          if (clearSearch) clearSearch.style.display = 'none';
+          const saved = await saveImages();
+          renderAll();
+          if (!saved) alert('图片已临时显示，但浏览器未能持久保存。请立即导出备份，并减少导入数量后重试。');
+        }
+        if (failures.length) {
+          alert(`成功导入 ${imported} 张；有 ${failures.length} 张读取失败：\n${failures.slice(0, 8).join('\n')}${failures.length > 8 ? '\n……' : ''}`);
+        } else {
+          showToast(`成功导入 ${imported} 张原图`);
+        }
+      }
+
+      // --- 导出 ---
+      function selectedBatchImages() {
+        const selectedIds = appState.batchSelectedImageIds;
+        return appState.images.filter(img => selectedIds.has(img.id));
+      }
+
+      function safeExportFilename(name, fallback = 'photo') {
+        let value = String(name || fallback).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim();
+        if (!value || value === '.' || value === '..') value = fallback;
+        return value.slice(0, 180);
+      }
+
+      function extensionForMime(mime) {
+        const map = {
+          'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp',
+          'image/bmp': '.bmp', 'image/svg+xml': '.svg', 'image/heic': '.heic', 'image/heif': '.heif',
+          'image/avif': '.avif', 'image/tiff': '.tiff'
+        };
+        return map[String(mime || '').toLowerCase()] || '';
+      }
+
+      function exportFilenameForImage(image, index) {
+        const mime = image.mimeType || getDataUrlMime(image.url);
+        const mimeExt = extensionForMime(mime);
+        let name = safeExportFilename(image.name, `photo_${index + 1}`);
+        const dot = name.lastIndexOf('.');
+        if (!mimeExt && dot < 1) name += '.img';
+        else if (mimeExt && dot < 1) name += mimeExt;
+        else if (mimeExt) {
+          const currentExt = name.slice(dot).toLowerCase();
+          const compatible = { 'image/jpeg': ['.jpg', '.jpeg'], 'image/tiff': ['.tif', '.tiff'] };
+          const allowed = compatible[String(mime || '').toLowerCase()] || [mimeExt];
+          if (!allowed.includes(currentExt)) name = name.slice(0, dot) + mimeExt;
+        }
+        return name;
+      }
+
+      function getDataUrlMime(dataUrl, fallback = 'image/jpeg') {
+        const match = String(dataUrl || '').match(/^data:([^;,]+)/i);
+        return match ? match[1] : fallback;
+      }
+
+      function dataUrlToBytes(dataUrl) {
+        const comma = dataUrl.indexOf(',');
+        if (comma < 0) throw new Error('图片数据格式错误');
+        const metadata = dataUrl.slice(0, comma);
+        const payload = dataUrl.slice(comma + 1);
+        if (/;base64/i.test(metadata)) {
+          const binary = atob(payload);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          return bytes;
+        }
+        return new TextEncoder().encode(decodeURIComponent(payload));
+      }
+
+      const CRC32_TABLE = (() => {
+        const table = new Uint32Array(256);
+        for (let n = 0; n < 256; n++) {
+          let c = n;
+          for (let k = 0; k < 8; k++) c = c & 1 ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+          table[n] = c >>> 0;
+        }
+        return table;
+      })();
+
+      function crc32(bytes) {
+        let crc = -1;
+        for (let i = 0; i < bytes.length; i++) {
+          crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ bytes[i]) & 0xff];
+        }
+        return (crc ^ -1) >>> 0;
+      }
+
+      function zipFilesStoreOnly(files) {
+        if (files.length > 65535) throw new Error('一次 ZIP 最多支持 65,535 个文件，请分批导出');
+        if (files.some(file => file.bytes.length > 0xffffffff)) throw new Error('单个文件超过 ZIP 经典格式的大小限制，请分批导出');
+        const encoder = new TextEncoder();
+        const localParts = [];
+        const centralParts = [];
+        let localOffset = 0;
+        const dateNow = new Date();
+        const dosTime = (dateNow.getHours() << 11) | (dateNow.getMinutes() << 5) | Math.floor(dateNow.getSeconds() / 2);
+        const dosDate = ((Math.max(1980, dateNow.getFullYear()) - 1980) << 9) | ((dateNow.getMonth() + 1) << 5) | dateNow.getDate();
+        const put16 = (view, offset, value) => view.setUint16(offset, value, true);
+        const put32 = (view, offset, value) => view.setUint32(offset, value >>> 0, true);
+
+        files.forEach(file => {
+          const nameBytes = encoder.encode(file.name);
+          const bytes = file.bytes;
+          const crc = crc32(bytes);
+          const localHeader = new Uint8Array(30);
+          const lv = new DataView(localHeader.buffer);
+          put32(lv, 0, 0x04034b50); put16(lv, 4, 20); put16(lv, 6, 0x0800); put16(lv, 8, 0);
+          put16(lv, 10, dosTime); put16(lv, 12, dosDate); put32(lv, 14, crc); put32(lv, 18, bytes.length);
+          put32(lv, 22, bytes.length); put16(lv, 26, nameBytes.length); put16(lv, 28, 0);
+          localParts.push(localHeader, nameBytes, bytes);
+
+          const centralHeader = new Uint8Array(46);
+          const cv = new DataView(centralHeader.buffer);
+          put32(cv, 0, 0x02014b50); put16(cv, 4, 20); put16(cv, 6, 20); put16(cv, 8, 0x0800); put16(cv, 10, 0);
+          put16(cv, 12, dosTime); put16(cv, 14, dosDate); put32(cv, 16, crc); put32(cv, 20, bytes.length);
+          put32(cv, 24, bytes.length); put16(cv, 28, nameBytes.length); put16(cv, 30, 0); put16(cv, 32, 0);
+          put16(cv, 34, 0); put16(cv, 36, 0); put32(cv, 38, 0); put32(cv, 42, localOffset);
+          centralParts.push(centralHeader, nameBytes);
+          localOffset += localHeader.length + nameBytes.length + bytes.length;
+        });
+
+        const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+        const end = new Uint8Array(22);
+        const ev = new DataView(end.buffer);
+        put32(ev, 0, 0x06054b50); put16(ev, 4, 0); put16(ev, 6, 0); put16(ev, 8, files.length); put16(ev, 10, files.length);
+        put32(ev, 12, centralSize); put32(ev, 16, localOffset); put16(ev, 20, 0);
+        return new Blob([...localParts, ...centralParts, end], { type: 'application/zip' });
+      }
+
+      function downloadBlob(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url; link.download = filename; link.style.display = 'none';
+        document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      }
+
+      function shareSelectedImages() {
+        const images = selectedBatchImages();
+        if (!images.length) { showToast('请先选择照片'); return; }
+        if (!navigator.share || typeof File === 'undefined' || typeof navigator.canShare !== 'function') {
+          showToast('当前浏览器不支持直接分享多张图片，请使用 ZIP 导出');
+          return;
+        }
+        const estimatedSize = images.reduce((sum, img) => sum + (img.size || Math.max(0, Math.floor(String(img.url).length * 0.72))), 0);
+        if (estimatedSize > 150 * 1024 * 1024) {
+          showToast('所选照片较大，建议分批导出 ZIP，避免手机内存不足');
+          return;
+        }
+        try {
+          const files = images.map((img, index) => {
+            const bytes = dataUrlToBytes(img.url);
+            const mime = img.mimeType || getDataUrlMime(img.url);
+            const name = exportFilenameForImage(img, index);
+            return new File([bytes], name, { type: mime || 'application/octet-stream', lastModified: img.lastModified || Date.now() });
+          });
+          if (!navigator.canShare({ files })) {
+            showToast('此设备不支持一次分享这么多文件，可改用 ZIP 导出');
+            return;
+          }
+          navigator.share({ title: '相册标签管家照片', text: `导出 ${files.length} 张照片`, files })
+            .then(() => {
+              document.getElementById('modal-batch-export').style.display = 'none';
+              showToast('系统分享已完成');
+            })
+            .catch(error => {
+              if (error && error.name === 'AbortError') return;
+              console.error('系统分享失败：', error);
+              showToast('系统分享失败，请改用 ZIP 导出');
+            });
+        } catch (error) {
+          console.error('准备分享照片失败：', error);
+          showToast('准备照片失败，请改用 ZIP 导出');
+        }
+      }
+
+      function downloadSelectedImagesZip() {
+        const images = selectedBatchImages();
+        if (!images.length) { showToast('请先选择照片'); return; }
+        const estimateBytes = images.reduce((sum, img) => sum + (img.size || Math.max(0, Math.floor(String(img.url).length * 0.72))), 0);
+        if (estimateBytes > 250 * 1024 * 1024 && !confirm('所选照片约超过 250 MB，打包可能占用较多内存。建议分批导出。仍要继续吗？')) return;
+        try {
+          const usedNames = new Set();
+          const files = images.map((img, index) => {
+            const original = exportFilenameForImage(img, index);
+            const dot = original.lastIndexOf('.');
+            const base = dot > 0 ? original.slice(0, dot) : original;
+            const ext = dot > 0 ? original.slice(dot) : '';
+            let candidate = original, suffix = 2;
+            while (usedNames.has(candidate.toLowerCase())) candidate = `${base} (${suffix++})${ext}`;
+            usedNames.add(candidate.toLowerCase());
+            return { name: candidate, bytes: dataUrlToBytes(img.url) };
+          });
+          const blob = zipFilesStoreOnly(files);
+          downloadBlob(blob, `照片批量导出_${getTodayString()}_${files.length}张.zip`);
+          document.getElementById('modal-batch-export').style.display = 'none';
+          showToast(`已打包 ${files.length} 张照片`);
+        } catch (error) {
+          console.error('批量导出失败：', error);
+          alert('批量打包失败，可能是所选照片过多或设备内存不足。请减少每次导出的照片数量后重试。');
+        }
+      }
+
+      // --- Event Listeners ---
+      function bindEvents() {
+        document.getElementById('btn-toggle-view').onclick = () => {
+          appState.showCalendarView = !appState.showCalendarView;
+          updateCalendarVisibility();
+        };
+
+        document.getElementById('cal-prev-month').onclick = () => {
+          if (appState.calendarCurrentMonth === 0) {
+            appState.calendarCurrentMonth = 11;
+            appState.calendarCurrentYear--;
+          } else appState.calendarCurrentMonth--;
+          renderCalendar();
+        };
+
+        document.getElementById('cal-next-month').onclick = () => {
+          if (appState.calendarCurrentMonth === 11) {
+            appState.calendarCurrentMonth = 0;
+            appState.calendarCurrentYear++;
+          } else appState.calendarCurrentMonth++;
+          renderCalendar();
+        };
+
+        document.getElementById('btn-clear-date-filter').onclick = () => {
+          appState.selectedDate = null;
+          renderFilterTags();
+          renderCalendar();
+          renderImageGrid();
+        };
+
+        document.getElementById('file-input').onchange = async (e) => {
+          const files = Array.from(e.target.files || []);
+          e.target.value = '';
+          await importImageFiles(files);
+        };
+
+        document.getElementById('btn-toggle-select').onclick = () => toggleMultiSelectMode();
+
+        document.getElementById('btn-batch-select-all').onclick = () => {
+          const filtered = getFilteredImages();
+          if (!filtered.length) return;
+          const allSelected = filtered.every(img => appState.batchSelectedImageIds.has(img.id));
+          if (allSelected) {
+            filtered.forEach(img => appState.batchSelectedImageIds.delete(img.id));
+          } else {
+            filtered.forEach(img => appState.batchSelectedImageIds.add(img.id));
+          }
+          updateBatchBar();
+          renderImageGrid();
+        };
+
+        document.getElementById('btn-toggle-filters').onclick = () => {
+          setFiltersExpanded(!appState.filtersExpanded);
+        };
+
+        const searchInput = document.getElementById('search-input');
+        const clearBtn = document.getElementById('btn-clear-search');
+        let searchDebounceTimer = null;
+
+        searchInput.oninput = (e) => {
+          appState.searchQuery = e.target.value;
+          clearBtn.style.display = appState.searchQuery ? 'block' : 'none';
+          clearTimeout(searchDebounceTimer);
+          searchDebounceTimer = setTimeout(() => renderImageGrid(), 130);
+        };
+
+        clearBtn.onclick = () => {
+          searchInput.value = '';
+          appState.searchQuery = '';
+          clearBtn.style.display = 'none';
+          renderImageGrid();
+        };
+
+        document.getElementById('btn-reset-filters').onclick = () => {
+          appState.selectedTagIds = [];
+          appState.selectedDate = null;
+          renderFilterTags();
+          if (appState.showCalendarView) renderCalendar();
+          renderImageGrid();
+        };
+
+        document.getElementById('btn-manage-tags').onclick = () => openManageTagsModal();
+
+        document.getElementById('btn-export-backup').onclick = () => exportBackup();
+        document.getElementById('btn-import-backup').onclick = () => document.getElementById('backup-file-input').click();
+        document.getElementById('backup-file-input').onchange = async (e) => {
+          const file = e.target.files && e.target.files[0];
+          await importBackupFile(file);
+          e.target.value = '';
+        };
+
+        const closeManageTags = () => { document.getElementById('modal-manage-tags').style.display = 'none'; };
+        document.getElementById('btn-close-manage-tags').onclick = closeManageTags;
+        document.getElementById('btn-done-manage-tags').onclick = closeManageTags;
+        document.getElementById('modal-manage-overlay').onclick = closeManageTags;
+
+        document.getElementById('form-manage-add-category').onsubmit = (e) => {
+          e.preventDefault();
+          const input = document.getElementById('manage-new-category-input');
+          if (addCategory(input.value)) { input.value = ''; showToast('主分类创建成功'); }
+        };
+
+        document.getElementById('form-manage-add-tag').onsubmit = (e) => {
+          e.preventDefault();
+          const input = document.getElementById('manage-new-tag-input');
+          const categoryId = document.getElementById('manage-tag-category-select').value;
+          const val = input.value.trim();
+          if (!val || !categoryId) return;
+          if (appState.tags.some(t => t.categoryId === categoryId && t.name.toLowerCase() === val.toLowerCase())) {
+            showToast('该主分类下已有同名标签'); return;
+          }
+          appState.tags.push({ id: createId('tag'), name: val, color: getAutoColor(val), categoryId });
+          saveTags(); input.value = '';
+          renderAll(); renderManageTagsList(); renderDrawerTags();
+          showToast('标签添加成功');
+        };
+
+        document.getElementById('btn-save-drawer-date').onclick = async () => {
+          const newDate = document.getElementById('drawer-date-input').value;
+          let changed = false;
+          appState.images.forEach(img => {
+            if (!appState.drawerTargetImageIds.includes(img.id)) return;
+            if (newDate && img.date !== newDate) { img.date = newDate; changed = true; }
+          });
+          if (changed) await saveImages();
+          renderAll();
+          if (appState.activeDetailImageId) updateActiveDetailMeta();
+          document.getElementById('drawer-tag-assign').style.display = 'none';
+          showToast(changed ? '照片信息已保存' : '标签已即时保存');
+        };
+
+        document.getElementById('form-quick-tag').onsubmit = (e) => {
+          e.preventDefault();
+          const nameInput = document.getElementById('quick-tag-input');
+          const categoryId = document.getElementById('quick-tag-category-select').value;
+          const val = nameInput.value.trim();
+          if (!val || !categoryId) return;
+          if (appState.tags.some(t => t.categoryId === categoryId && t.name.toLowerCase() === val.toLowerCase())) {
+            showToast('该主分类下已有同名标签'); return;
+          }
+          const newTag = { id: createId('tag'), name: val, color: getAutoColor(val), categoryId };
+          appState.tags.push(newTag);
+          appState.images.forEach(img => {
+            if (appState.drawerTargetImageIds.includes(img.id) && !img.tags.includes(newTag.id)) img.tags.push(newTag.id);
+          });
+          saveTags(); saveImages();
+          nameInput.value = '';
+          renderAll(); renderManageTagsList(); renderDrawerTags();
+          showToast('标签已创建并绑定');
+        };
+
+        document.getElementById('btn-close-drawer').onclick = () => {
+          document.getElementById('drawer-tag-assign').style.display = 'none';
+        };
+        document.getElementById('drawer-tag-overlay').onclick = () => {
+          document.getElementById('drawer-tag-assign').style.display = 'none';
+        };
+
+        document.getElementById('btn-batch-export').onclick = () => {
+          const count = appState.batchSelectedImageIds.size;
+          if (!count) { showToast('请先选择要导出的照片'); return; }
+          document.getElementById('batch-export-desc').textContent = `已选择 ${count} 张照片；导出将保留原文件内容和扩展名。`;
+          document.getElementById('modal-batch-export').style.display = 'flex';
+        };
+        const closeBatchExport = () => { document.getElementById('modal-batch-export').style.display = 'none'; };
+        document.getElementById('btn-close-batch-export').onclick = closeBatchExport;
+        document.getElementById('modal-batch-export-overlay').onclick = closeBatchExport;
+        document.getElementById('btn-share-batch-images').onclick = () => shareSelectedImages();
+        document.getElementById('btn-download-batch-zip').onclick = () => downloadSelectedImagesZip();
+
+        document.getElementById('btn-batch-tag').onclick = () => {
+          if (appState.batchSelectedImageIds.size === 0) {
+            showToast('请先选择图片');
+            return;
+          }
+          openAssignDrawer(Array.from(appState.batchSelectedImageIds));
+        };
+
+        document.getElementById('btn-batch-delete').onclick = async () => {
+          const count = appState.batchSelectedImageIds.size;
+          if (!count) return;
+          if (!confirm(`确定删除选中的 ${count} 张照片吗？此操作不可撤销。`)) return;
+          const ids = Array.from(appState.batchSelectedImageIds);
+          appState.images = appState.images.filter(img => !ids.includes(img.id));
+          await saveImages();
+          toggleMultiSelectMode(false);
+          renderAll();
+          showToast(`已删除 ${ids.length} 张照片`);
+        };
+
+        document.getElementById('btn-prev-photo').onclick = () => navigateDetailPhoto(-1);
+        document.getElementById('btn-next-photo').onclick = () => navigateDetailPhoto(1);
+        document.getElementById('btn-close-detail').onclick = () => closeDetailViewer();
+
+        document.getElementById('btn-detail-edit').onclick = () => {
+          if (appState.activeDetailImageId) openAssignDrawer([appState.activeDetailImageId]);
+        };
+
+        document.getElementById('btn-detail-delete').onclick = async () => {
+          const id = appState.activeDetailImageId;
+          if (!id) return;
+          if (!confirm('确定删除这张照片吗？此操作不可撤销。')) return;
+          appState.images = appState.images.filter(img => img.id !== id);
+          await saveImages();
+          closeDetailViewer();
+          renderAll();
+          showToast('照片已删除');
+        };
+
+        document.addEventListener('keydown', (e) => {
+          const modal = document.getElementById('modal-photo-viewer');
+          if (!modal || modal.classList.contains('hidden')) return;
+          if (e.key === 'Escape') { e.preventDefault(); closeDetailViewer(); }
+          else if (e.key === 'ArrowLeft') { e.preventDefault(); navigateDetailPhoto(-1); }
+          else if (e.key === 'ArrowRight') { e.preventDefault(); navigateDetailPhoto(1); }
+        });
+
+        setupSwipeAndZoomGestures();
+      }
+
+      // --- Init ---
+      (async function initApp() {
+        try {
+          await loadData();
+          if (navigator.storage && typeof navigator.storage.persist === 'function') {
+            navigator.storage.persist().catch(() => {});
+          }
+        } catch (error) {
+          console.error('初始化数据失败：', error);
+          alert('读取本地数据时出现问题。为避免覆盖已有数据，建议先检查浏览器存储权限并尝试导入备份。');
+        }
+        bindEvents();
+        setFiltersExpanded(false);
+        renderAll();
+      })();
+    });
+  </script>
+</body>
+</html>
